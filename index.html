@@ -1,0 +1,2599 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Night Shield Deluxe</title>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      background: #020611;
+      font-family: Inter, Arial, sans-serif;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: crosshair;
+      background: #020611;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  let W = 1280;
+  let H = 720;
+  let DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rand = (a, b) => Math.random() * (b - a) + a;
+  const randi = (a, b) => Math.floor(rand(a, b + 1));
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  const smoothstep = (a, b, x) => {
+    let t = clamp((x - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+      if (typeof r === "number") r = {tl:r, tr:r, br:r, bl:r};
+      else r = Object.assign({tl:0, tr:0, br:0, bl:0}, r);
+      this.beginPath();
+      this.moveTo(x + r.tl, y);
+      this.lineTo(x + w - r.tr, y);
+      this.quadraticCurveTo(x + w, y, x + w, y + r.tr);
+      this.lineTo(x + w, y + h - r.br);
+      this.quadraticCurveTo(x + w, y + h, x + w - r.br, y + h);
+      this.lineTo(x + r.bl, y + h);
+      this.quadraticCurveTo(x, y + h, x, y + h - r.bl);
+      this.lineTo(x, y + r.tl);
+      this.quadraticCurveTo(x, y, x + r.tl, y);
+      return this;
+    };
+  }
+
+  function rgba(r, g, b, a) {
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  function glowCircle(x, y, r, color, alpha = 1) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, color.replace("ALPHA", alpha));
+    g.addColorStop(0.45, color.replace("ALPHA", alpha * 0.42));
+    g.addColorStop(1, color.replace("ALPHA", 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.fill();
+  }
+
+  function drawTextShadow(text, x, y, font, fill, shadow = "rgba(0,0,0,0.45)", ox = 0, oy = 2) {
+    ctx.font = font;
+    ctx.fillStyle = shadow;
+    ctx.fillText(text, x + ox, y + oy);
+    ctx.fillStyle = fill;
+    ctx.fillText(text, x, y);
+  }
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    initStars();
+    initCity();
+  }
+  window.addEventListener("resize", resize);
+
+  // ---------- Input ----------
+  const mouse = { x: 0, y: 0, down: false, justPressed: false };
+  const pointer = { active: false, isTouch: false };
+  const pauseButton = { x: 0, y: 0, w: 54, h: 54 };
+
+  function updatePointerPos(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = clientX - rect.left;
+    mouse.y = clientY - rect.top;
+  }
+
+  function isPortraitPhone() {
+    return window.innerWidth < 900 && window.innerHeight > window.innerWidth;
+  }
+
+  function pointInPauseButton(x, y) {
+    return x >= pauseButton.x && x <= pauseButton.x + pauseButton.w && y >= pauseButton.y && y <= pauseButton.y + pauseButton.h;
+  }
+
+  function togglePause() {
+    if (state === "playing") paused = !paused;
+  }
+
+  canvas.addEventListener("mousemove", (e) => {
+    updatePointerPos(e.clientX, e.clientY);
+    pointer.isTouch = false;
+  });
+  canvas.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    updatePointerPos(e.clientX, e.clientY);
+    if (state === "playing" && pointInPauseButton(mouse.x, mouse.y)) {
+      togglePause();
+      return;
+    }
+    pointer.active = true;
+    pointer.isTouch = false;
+    mouse.down = true;
+    mouse.justPressed = true;
+  });
+  window.addEventListener("mouseup", (e) => {
+    if (e.button === 0) {
+      mouse.down = false;
+      pointer.active = false;
+    }
+  });
+
+  canvas.addEventListener("touchstart", (e) => {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    updatePointerPos(t.clientX, t.clientY);
+    pointer.isTouch = true;
+    if (state === "playing" && pointInPauseButton(mouse.x, mouse.y)) {
+      togglePause();
+      e.preventDefault();
+      return;
+    }
+    pointer.active = true;
+    mouse.down = true;
+    mouse.justPressed = true;
+    if (state === "title" && !isPortraitPhone()) startGame();
+    if (state === "gameover" && !isPortraitPhone()) restartGame();
+    e.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", (e) => {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    updatePointerPos(t.clientX, t.clientY);
+    pointer.isTouch = true;
+    e.preventDefault();
+  }, { passive: false });
+
+  function endTouch(e) {
+    mouse.down = false;
+    pointer.active = false;
+    if (e) e.preventDefault();
+  }
+  canvas.addEventListener("touchend", endTouch, { passive: false });
+  canvas.addEventListener("touchcancel", endTouch, { passive: false });
+
+  const keys = {};
+  window.addEventListener("keydown", (e) => {
+    keys[e.code] = true;
+    if (e.code === "Escape" && state === "playing") paused = !paused;
+    if (e.code === "KeyP" && state === "playing") paused = !paused;
+    if ((e.code === "Enter" || e.code === "Space") && state === "title") startGame();
+    if ((e.code === "Enter" || e.code === "KeyR" || e.code === "Space") && state === "gameover") restartGame();
+  });
+  window.addEventListener("keyup", (e) => keys[e.code] = false);
+
+  // ---------- World ----------
+  let state = "title";
+  let paused = false;
+  let time = 0;
+  let best = 0;
+
+  let stars = [];
+  let backgroundSparks = [];
+  let city = [];
+  let skylineGlow = [];
+  let launcher = {};
+
+  let missiles = [];
+  let interceptors = [];
+  let explosions = [];
+  let particles = [];
+  let shockwaves = [];
+  let embers = [];
+  let smokePuffs = [];
+  let drones = [];
+  let bombs = [];
+  let powerups = [];
+  let floatingTexts = [];
+  let repairDrones = [];
+  let shieldDrones = [];
+
+  let score = 0;
+  let wave = 1;
+  let cityHealth = 100;
+  let cityMaxHealth = 100;
+  let totalDestroyed = 0;
+  let difficulty = 1;
+  let waveCooldown = 2;
+  let screenShake = 0;
+  let flash = 0;
+  let horizonY = 0;
+  let spawnBudget = 0;
+  let spawnUsed = 0;
+  let spawnTimer = 1;
+  let waveAlert = 0;
+  let dayCycle = 0.08;
+  let daySpeed = 0.0038;
+  let shieldHits = 0;
+  let powerupDropTimer = 8;
+
+  let effects = {
+    infiniteAmmo: 0,
+    powerShot: 0,
+    slowTime: 0,
+    shieldDrones: 0,
+    splitShot: 0
+  };
+
+  const POWERUP_TYPES = ["heal", "power", "shield", "slow", "infinite", "split"] ;
+
+  function addFloatingText(text, x, y, color = "#ffffff", size = 18) {
+    floatingTexts.push({
+      text, x, y,
+      vx: rand(-10, 10),
+      vy: rand(-18, -32),
+      life: 1.15,
+      maxLife: 1.15,
+      color,
+      size
+    });
+  }
+
+  function initStars() {
+    stars = [];
+    const count = Math.floor((W * H) / 8500);
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H * 0.72,
+        r: Math.random() * 1.8 + 0.3,
+        a: Math.random() * 0.8 + 0.2,
+        tw: Math.random() * TAU
+      });
+    }
+
+    backgroundSparks = [];
+    for (let i = 0; i < 22; i++) {
+      backgroundSparks.push({
+        x: rand(0, W),
+        y: rand(0, H * 0.55),
+        vx: rand(-8, 8),
+        vy: rand(4, 14),
+        t: rand(0, 6)
+      });
+    }
+  }
+
+  function initCity() {
+    horizonY = H * 0.72;
+    city = [];
+    skylineGlow = [];
+
+    let x = 0;
+    while (x < W) {
+      const bw = rand(W * 0.026, W * 0.066);
+      const bh = rand(H * 0.08, H * 0.28);
+      const isTower = Math.random() < 0.18;
+      const height = isTower ? bh * rand(1.2, 1.8) : bh;
+      const roofType = randi(0, 3);
+      const building = {
+        x, y: horizonY - height, w: bw, h: height,
+        roofType,
+        alive: true,
+        damage: 0,
+        windows: []
+      };
+
+      const rows = Math.max(2, Math.floor(height / 18));
+      const cols = Math.max(2, Math.floor(bw / 16));
+      for (let ry = 0; ry < rows; ry++) {
+        for (let rx = 0; rx < cols; rx++) {
+          if (Math.random() < 0.84) {
+            building.windows.push({
+              x: x + 6 + rx * ((bw - 12) / cols),
+              y: horizonY - height + 8 + ry * ((height - 14) / rows),
+              on: Math.random() < 0.74,
+              flick: Math.random() * TAU
+            });
+          }
+        }
+      }
+
+      city.push(building);
+      skylineGlow.push({ pulse: Math.random() * TAU });
+      x += bw + rand(2, 8);
+    }
+
+    launcher = {
+      x: W / 2,
+      y: H * 0.865,
+      angle: -Math.PI / 2,
+      cooldown: 0,
+      fireRate: 0.16,
+      energy: 100,
+      energyMax: 100,
+      overheat: 0,
+      hitFlash: 0
+    };
+  }
+
+  function resetEntities() {
+    missiles = [];
+    interceptors = [];
+    explosions = [];
+    particles = [];
+    shockwaves = [];
+    embers = [];
+    smokePuffs = [];
+    drones = [];
+    bombs = [];
+    powerups = [];
+    floatingTexts = [];
+    repairDrones = [];
+    shieldDrones = [];
+  }
+
+  function resetEffects() {
+    effects.infiniteAmmo = 0;
+    effects.powerShot = 0;
+    effects.slowTime = 0;
+    effects.shieldDrones = 0;
+    effects.splitShot = 0;
+    shieldHits = 0;
+  }
+
+  function startGame() {
+    state = "playing";
+    paused = false;
+    time = 0;
+    score = 0;
+    wave = 1;
+    cityHealth = 100;
+    cityMaxHealth = 100;
+    totalDestroyed = 0;
+    difficulty = 1;
+    waveCooldown = 2.2;
+    screenShake = 0;
+    flash = 0;
+    dayCycle = 0.08;
+    powerupDropTimer = 7.5;
+    resetEffects();
+    resetEntities();
+    initCity();
+    prepareWave();
+  }
+
+  function restartGame() {
+    startGame();
+  }
+
+  function gameOver() {
+    state = "gameover";
+    best = Math.max(best, score);
+  }
+
+  function prepareWave() {
+    spawnUsed = 0;
+    spawnBudget = Math.floor(9 + wave * 3.4);
+    spawnTimer = 1.15;
+    difficulty = 1 + (wave - 1) * 0.12;
+    waveAlert = 2.8;
+  }
+
+  function maybeSpawnRepairDrone() {
+    return;
+  }
+
+  function spawnParachutePowerup(type) {
+    powerups.push({
+      type,
+      x: rand(W * 0.16, W * 0.84),
+      y: rand(-90, -36),
+      vx: rand(-10, 10),
+      vy: rand(26, 40),
+      sway: rand(0.9, 1.6),
+      swayPhase: Math.random() * TAU,
+      r: 18,
+      pulse: Math.random() * TAU,
+      life: 18,
+      parachute: true
+    });
+  }
+
+  function schedulePowerupDrop() {
+    const roll = Math.random();
+    let type = "infinite";
+    if (cityHealth < cityMaxHealth * 0.72 && roll < 0.30) type = "heal";
+    else if (roll < 0.46) type = "shield";
+    else if (roll < 0.63) type = "slow";
+    else if (roll < 0.79) type = "power";
+    else if (roll < 0.90) type = "split";
+    else type = "infinite";
+    spawnParachutePowerup(type);
+    powerupDropTimer = rand(11.5, 18.5);
+  }
+
+  function enemyTimeScale() {
+    return effects.slowTime > 0 ? 0.58 : 1;
+  }
+
+  function addSmoke(x, y, vx, vy, size, life, color) {
+    smokePuffs.push({
+      x, y, vx, vy, size, life, maxLife: life, color
+    });
+  }
+
+  function addDebrisBurst(x, y, amount = 14, warm = true) {
+    for (let i = 0; i < amount; i++) {
+      const a = Math.random() * TAU;
+      const sp = rand(20, 130);
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        r: rand(1.2, 4.2),
+        life: rand(0.35, 1.1),
+        maxLife: rand(0.35, 1.1),
+        color: warm
+          ? (Math.random() < 0.55 ? [255, 120, 80] : [255, 220, 130])
+          : (Math.random() < 0.55 ? [120, 220, 255] : [230, 250, 255]),
+        glow: true
+      });
+    }
+  }
+
+  function createExplosion(x, y, power, friendly = false, style = "normal") {
+    explosions.push({
+      x, y,
+      r: 1,
+      maxR: power,
+      speed: friendly ? 190 : 165,
+      life: friendly ? 0.42 : 0.56,
+      maxLife: friendly ? 0.42 : 0.56,
+      friendly,
+      style
+    });
+
+    shockwaves.push({
+      x, y,
+      r: 5,
+      maxR: power * (style === "cluster" ? 1.35 : 1.18),
+      life: 0.34,
+      maxLife: 0.34,
+      alpha: friendly ? 0.75 : 0.92,
+      color: style === "cluster"
+        ? [210, 120, 255]
+        : friendly ? [140, 235, 255] : [255, 180, 120]
+    });
+
+    const count = Math.floor(power * 1.3);
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TAU;
+      const sp = rand(35, power * 4.1);
+      let color;
+      if (style === "cluster") color = Math.random() < 0.55 ? [225, 150, 255] : [255, 220, 140];
+      else if (friendly) color = Math.random() < 0.5 ? [130, 240, 255] : [255, 235, 180];
+      else color = Math.random() < 0.55 ? [255, 120, 80] : [255, 220, 120];
+
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        r: rand(1.5, 4.8),
+        life: rand(0.3, 1.0),
+        maxLife: 1.0,
+        color,
+        glow: true
+      });
+    }
+
+    for (let i = 0; i < Math.floor(power * 0.45); i++) {
+      embers.push({
+        x, y,
+        vx: rand(-40, 40),
+        vy: rand(-80, 35),
+        life: rand(1.0, 2.3),
+        maxLife: rand(1.0, 2.3),
+        size: rand(1.4, 3.6)
+      });
+    }
+
+    for (let i = 0; i < Math.floor(power * 0.12); i++) {
+      addSmoke(x + rand(-8, 8), y + rand(-8, 8), rand(-15, 15), rand(-30, -8), rand(10, 24), rand(0.6, 1.4),
+        style === "cluster" ? [120, 90, 145] : [80, 80, 90]);
+    }
+
+    if (!friendly) {
+      screenShake += Math.min(10, power * 0.08);
+      flash = Math.max(flash, 0.12);
+    }
+  }
+
+  function damageCity(amount, x) {
+    cityHealth = Math.max(0, cityHealth - amount);
+    if (cityHealth <= 0) gameOver();
+  }
+
+  function healCity(amount, x = W * 0.5) {
+    const before = cityHealth;
+    cityHealth = Math.min(cityMaxHealth, cityHealth + amount);
+    const gained = cityHealth - before;
+    if (gained > 0) {
+      addFloatingText("+" + Math.round(gained) + " ГОРОД", x, horizonY - 40, "#7fffc6", 20);
+      glowCircle(x, horizonY - 16, 80, "rgba(120,255,200,ALPHA)", 0.09);
+    }
+  }
+
+  function destroyBuildingAt(x, damage = rand(9, 16)) {
+    let nearest = null;
+    let nearestD = Infinity;
+    for (const b of city) {
+      const cx = b.x + b.w / 2;
+      if (b.alive) {
+        const d = Math.abs(cx - x);
+        if (d < nearestD) {
+          nearestD = d;
+          nearest = b;
+        }
+      }
+    }
+
+    if (nearest) {
+      nearest.damage += damage;
+      if (nearest.damage >= 24) {
+        nearest.alive = false;
+        createExplosion(x, horizonY - rand(8, 22), rand(34, 56), false);
+        for (let i = 0; i < 32; i++) {
+          particles.push({
+            x: rand(nearest.x, nearest.x + nearest.w),
+            y: rand(nearest.y, horizonY),
+            vx: rand(-120, 120),
+            vy: rand(-110, 85),
+            r: rand(2, 5),
+            life: rand(0.6, 1.8),
+            maxLife: 1.8,
+            color: Math.random() < 0.5 ? [95, 105, 130] : [255, 150, 80],
+            glow: Math.random() < 0.25
+          });
+        }
+        damageCity(rand(9, 15), x);
+      } else {
+        createExplosion(x, horizonY - rand(8, 18), rand(22, 34), false);
+        damageCity(rand(4, 8), x);
+      }
+
+      if (city.every(b => !b.alive)) gameOver();
+    } else {
+      damageCity(6, x);
+      createExplosion(x, horizonY, rand(26, 42), false);
+    }
+  }
+
+  function getAliveBuildingTarget() {
+    const alive = city.filter(b => b.alive);
+    if (alive.length > 0) {
+      const b = alive[randi(0, alive.length - 1)];
+      return {
+        x: rand(b.x + 4, b.x + b.w - 4),
+        y: horizonY
+      };
+    }
+    return { x: rand(W * 0.1, W * 0.9), y: H * 0.84 };
+  }
+
+  function spawnMissile(type = "basic", custom) {
+    let startX = rand(0, W);
+    let startY = rand(-140, -30);
+    if (!custom) {
+      const sideBias = Math.random();
+      if (sideBias < 0.2) startX = rand(-W * 0.1, W * 0.15);
+      else if (sideBias > 0.8) startX = rand(W * 0.85, W * 1.1);
+    } else {
+      startX = custom.x;
+      startY = custom.y;
+    }
+
+    const target = custom && custom.tx != null ? { x: custom.tx, y: custom.ty } : getAliveBuildingTarget();
+    const dx = target.x - startX;
+    const dy = target.y - startY;
+    const len = Math.hypot(dx, dy) || 1;
+
+    let speed = rand(58, 95) * difficulty + wave * 1.4;
+    let colorType = "red";
+    let splitAt = null;
+    let canSplit = false;
+    let size = rand(3.4, 4.5);
+    let hp = 1;
+
+    if (type === "cluster") {
+      speed *= 0.66;
+      colorType = "cluster";
+      canSplit = true;
+      splitAt = rand(H * 0.38, H * 0.54);
+      size = 7.4;
+      hp = 2;
+    } else if (type === "mini") {
+      speed *= 1.25;
+      colorType = "mini";
+      size = 2.6;
+    } else if (type === "heavy") {
+      speed *= 0.82;
+      colorType = "heavy";
+      size = 5.6;
+      hp = 3;
+    }
+
+    missiles.push({
+      type,
+      x: startX,
+      y: startY,
+      vx: dx / len * speed,
+      vy: dy / len * speed,
+      tx: target.x,
+      ty: target.y,
+      trail: [],
+      smokeTick: 0,
+      alive: true,
+      r: size,
+      hp,
+      colorType,
+      heat: rand(0.8, 1.25),
+      spin: rand(-4, 4),
+      wiggle: Math.random() * TAU,
+      canSplit,
+      splitAt,
+      splitDone: false,
+      spawnProtect: custom && custom.spawnProtect ? custom.spawnProtect : 0
+    });
+  }
+
+  function splitClusterMissile(m) {
+    if (m.splitDone) return;
+    m.splitDone = true;
+    createExplosion(m.x, m.y, rand(18, 24), false, "cluster");
+    const spread = [-1.1, -0.65, -0.22, 0.22, 0.65, 1.1];
+    for (let i = 0; i < 6; i++) {
+      const target = getAliveBuildingTarget();
+      const ang = spread[i] + rand(-0.05, 0.05);
+      const launchX = m.x + Math.sin(ang) * rand(6, 16);
+      const launchY = m.y + Math.cos(ang) * rand(2, 10);
+      spawnMissile("mini", {
+        x: launchX,
+        y: launchY,
+        tx: clamp(m.x + Math.sin(ang) * rand(150, 240) + rand(-25, 25), 40, W - 40),
+        ty: target.y,
+        spawnProtect: 0.32
+      });
+      particles.push({
+        x: launchX,
+        y: launchY,
+        vx: Math.sin(ang) * rand(120, 210),
+        vy: rand(-35, 55),
+        r: rand(1.8, 3.2),
+        life: rand(0.35, 0.7),
+        maxLife: 0.7,
+        color: Math.random() < 0.5 ? [255, 190, 120] : [255, 130, 210],
+        glow: true
+      });
+    }
+    addFloatingText("КАССЕТА РАЗДЕЛИЛАСЬ", m.x, m.y - 10, "#ffd0a8", 20);
+  }
+
+  function spawnDrone() {
+    const fromLeft = Math.random() < 0.5;
+    const y = rand(H * 0.14, H * 0.32);
+    const x = fromLeft ? -60 : W + 60;
+    const speed = rand(70, 110) * difficulty;
+    const bombsLeft = randi(1, wave < 5 ? 1 : 2);
+    drones.push({
+      type: "drone",
+      x, y,
+      vx: fromLeft ? speed : -speed,
+      vy: rand(8, 24),
+      phase: Math.random() * TAU,
+      bombsLeft,
+      bombCooldown: rand(5.2, 7.8) - Math.min(0.8, wave * 0.05),
+      hp: wave >= 7 ? 2 : 1,
+      trail: [],
+      pulse: Math.random() * TAU,
+      wing: rand(16, 24),
+      body: rand(22, 30)
+    });
+  }
+
+  function dropBomb(drone) {
+    if (drone.bombsLeft <= 0) return;
+    drone.bombsLeft--;
+    bombs.push({
+      type: "bomb",
+      x: drone.x,
+      y: drone.y + 10,
+      vx: drone.vx * 0.12,
+      vy: rand(10, 30),
+      gravity: rand(240, 290),
+      trail: [],
+      r: 4.2
+    });
+    addFloatingText("СБРОС", drone.x, drone.y - 8, "#ffb08a", 15);
+  }
+
+  function spawnPowerup(x, y) {
+    return;
+  }
+
+  function spawnGuaranteedPowerup(x, y, type) {
+    return;
+  }
+
+  function spawnShieldDrone() {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    shieldDrones.push({
+      x: W * 0.5 + side * rand(40, 140),
+      y: horizonY - rand(55, 105),
+      vx: 0, vy: 0,
+      orbit: rand(0, TAU),
+      radius: rand(80, 165),
+      life: 16,
+      pulse: Math.random() * TAU,
+      targetId: null
+    });
+  }
+
+  function applyPowerup(type) {
+    if (type === "heal") {
+      healCity(20 + wave * 1.4);
+      addFloatingText("ХИЛ ГОРОДА", W * 0.5, 90, "#7fffc6", 23);
+    } else if (type === "infinite") {
+      effects.infiniteAmmo = 8.5;
+      addFloatingText("БЕСКОНЕЧНЫЕ ПАТРОНЫ", W * 0.5, 90, "#9fe8ff", 23);
+    } else if (type === "power") {
+      effects.powerShot = 10;
+      addFloatingText("СИЛЬНЫЙ УДАР", W * 0.5, 90, "#ffd48a", 23);
+    } else if (type === "slow") {
+      effects.slowTime = 7.8;
+      addFloatingText("ЗАМЕДЛЕНИЕ ВРЕМЕНИ", W * 0.5, 90, "#a7c3ff", 23);
+    } else if (type === "shield") {
+      effects.shieldDrones = 16;
+      for (let i = 0; i < 4; i++) spawnShieldDrone();
+      addFloatingText("ЩИТ: ДРОНЫ-ПЕРЕХВАТЧИКИ", W * 0.5, 90, "#75e4ff", 22);
+    } else if (type === "split") {
+      effects.splitShot = 10;
+      addFloatingText("РАЗДВОЕНИЕ ВЫСТРЕЛА", W * 0.5, 90, "#ffb9ff", 23);
+    }
+  }
+
+  function fireInterceptor(targetX, targetY) {
+    const infinite = effects.infiniteAmmo > 0;
+    const rateMul = infinite ? 0.34 : 1;
+    const cooldownNeeded = launcher.fireRate * rateMul;
+    if (launcher.cooldown > 0) return;
+    if (!infinite && launcher.energy < 11) return;
+
+    launcher.cooldown = cooldownNeeded;
+    if (!infinite) launcher.energy -= 11;
+    launcher.overheat = Math.min(1, launcher.overheat + 0.12);
+
+    const sx = launcher.x + Math.cos(launcher.angle) * 18;
+    const sy = launcher.y + Math.sin(launcher.angle) * 18;
+    const dx = targetX - sx;
+    const dy = targetY - sy;
+    const len = Math.hypot(dx, dy) || 1;
+    const speed = effects.powerShot > 0 ? 650 : 580;
+    const shots = effects.splitShot > 0 ? [-0.12, 0, 0.12] : [0];
+
+    for (const spread of shots) {
+      const ang = Math.atan2(dy, dx) + spread;
+      const tx = sx + Math.cos(ang) * len;
+      const ty = sy + Math.sin(ang) * len;
+      interceptors.push({
+        x: sx,
+        y: sy,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed,
+        tx,
+        ty,
+        trail: [],
+        smokeTick: 0,
+        alive: true,
+        arming: 0.05,
+        life: effects.powerShot > 0 ? 1.9 : 1.6,
+        power: effects.powerShot > 0 ? 1.35 : 1
+      });
+    }
+
+    for (let i = 0; i < 10; i++) {
+      particles.push({
+        x: sx,
+        y: sy,
+        vx: rand(-80, 80) - Math.cos(launcher.angle) * rand(30, 140),
+        vy: rand(-70, 70) - Math.sin(launcher.angle) * rand(30, 140),
+        r: rand(1, 3),
+        life: rand(0.18, 0.45),
+        maxLife: 0.45,
+        color: i < 4 ? [120, 220, 255] : [255, 210, 120],
+        glow: true
+      });
+    }
+  }
+
+  function spawnWaveEnemy() {
+    const p = Math.random();
+
+    if (wave >= 1 && p < Math.min(0.02 + wave * 0.005, 0.08)) {
+      spawnDrone();
+      spawnUsed += 2;
+      return;
+    }
+
+    if (wave >= 2 && p < Math.min(0.11 + wave * 0.01, 0.24)) {
+      spawnMissile("cluster");
+      spawnUsed += 2;
+      return;
+    }
+
+    if (wave >= 7 && p < 0.08) {
+      spawnMissile("heavy");
+      spawnUsed += 2;
+      return;
+    }
+
+    spawnMissile("basic");
+    spawnUsed += 1;
+  }
+
+  function update(dt) {
+    time += dt;
+    dayCycle = (dayCycle + dt * daySpeed) % 1;
+    screenShake *= Math.pow(0.11, dt);
+    flash *= Math.pow(0.05, dt);
+    waveAlert = Math.max(0, waveAlert - dt);
+
+    for (const s of stars) s.tw += dt * rand(0.4, 1.2);
+    for (const g of skylineGlow) g.pulse += dt * rand(0.3, 0.7);
+    for (const sp of backgroundSparks) {
+      sp.t += dt;
+      sp.x += sp.vx * dt;
+      sp.y += sp.vy * dt;
+      if (sp.y > H * 0.65 || sp.x < -20 || sp.x > W + 20) {
+        sp.x = rand(0, W);
+        sp.y = rand(0, H * 0.25);
+        sp.vx = rand(-8, 8);
+        sp.vy = rand(4, 14);
+      }
+    }
+
+    for (const k of Object.keys(effects)) effects[k] = Math.max(0, effects[k] - dt);
+
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      const f = floatingTexts[i];
+      f.life -= dt;
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      if (f.life <= 0) floatingTexts.splice(i, 1);
+    }
+
+    if (state !== "playing" || paused || isPortraitPhone()) return;
+
+    const enemyScale = enemyTimeScale();
+
+    powerupDropTimer -= dt;
+    if (powerupDropTimer <= 0) schedulePowerupDrop();
+
+    launcher.hitFlash *= Math.pow(0.03, dt);
+    launcher.cooldown = Math.max(0, launcher.cooldown - dt);
+    launcher.energy = Math.min(launcher.energyMax, launcher.energy + dt * 18);
+    launcher.overheat = Math.max(0, launcher.overheat - dt * 0.22);
+
+    const targetAngle = Math.atan2(mouse.y - launcher.y, mouse.x - launcher.x);
+    launcher.angle = lerp(launcher.angle, targetAngle, 1 - Math.pow(0.00001, dt));
+
+    if (mouse.down && mouse.y < H - 30 && !pointInPauseButton(mouse.x, mouse.y)) {
+      fireInterceptor(mouse.x, mouse.y);
+    }
+
+    if (spawnUsed < spawnBudget) {
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) {
+        spawnWaveEnemy();
+        let density = clamp(1.15 - wave * 0.024, 0.40, 1.15);
+        if (wave > 7 && Math.random() < Math.min(0.09, wave * 0.007)) {
+          spawnWaveEnemy();
+        }
+        spawnTimer = rand(0.28, density + 0.16);
+      }
+    } else if (
+      missiles.length === 0 &&
+      drones.length === 0 &&
+      bombs.length === 0 &&
+      explosions.length < 2
+    ) {
+      waveCooldown -= dt;
+      if (waveCooldown <= 0) {
+        wave++;
+        waveCooldown = 2.4;
+        prepareWave();
+      }
+    }
+
+    // Missiles
+    for (let i = missiles.length - 1; i >= 0; i--) {
+      const m = missiles[i];
+      const moveDt = dt * enemyScale;
+      m.wiggle += moveDt * 6;
+      const wobble = m.type === "heavy" ? 0.22 : m.type === "mini" ? 0.4 : 0.3;
+      m.x += m.vx * moveDt + Math.sin(m.wiggle) * wobble;
+      m.y += m.vy * moveDt;
+      m.spin += moveDt * 2.1;
+      m.spawnProtect = Math.max(0, (m.spawnProtect || 0) - dt);
+      m.trail.push({ x: m.x, y: m.y, t: 1 });
+      if (m.trail.length > (m.type === "mini" ? 12 : 22)) m.trail.shift();
+
+      m.smokeTick -= moveDt;
+      if (m.smokeTick <= 0) {
+        m.smokeTick = m.type === "mini" ? 0.05 : 0.035;
+        addSmoke(
+          m.x - m.vx * 0.01,
+          m.y - m.vy * 0.01,
+          rand(-8, 8),
+          rand(-12, -2),
+          m.type === "cluster" ? rand(7, 14) : rand(6, 12),
+          rand(0.35, 0.9),
+          m.type === "cluster" ? [100, 80, 120] : [90, 90, 100]
+        );
+      }
+
+      if (m.canSplit && !m.splitDone && m.y >= m.splitAt) {
+        splitClusterMissile(m);
+        missiles.splice(i, 1);
+        continue;
+      }
+
+      if (m.y >= horizonY) {
+        const dmg = m.type === "heavy" ? rand(12, 18) : m.type === "mini" ? rand(4, 7) : rand(9, 16);
+        createExplosion(m.x, m.y, m.type === "cluster" ? rand(42, 60) : rand(34, 54), false, m.type === "cluster" ? "cluster" : "normal");
+        destroyBuildingAt(m.x, dmg);
+        missiles.splice(i, 1);
+      }
+    }
+
+    // Drones
+    for (let i = drones.length - 1; i >= 0; i--) {
+      const d = drones[i];
+      const moveDt = dt * enemyScale;
+      d.phase += moveDt * 2.4;
+      d.x += d.vx * moveDt;
+      d.y += d.vy * moveDt + Math.sin(d.phase) * 0.4;
+      d.trail.push({ x: d.x, y: d.y });
+      if (d.trail.length > 12) d.trail.shift();
+      d.bombCooldown -= moveDt;
+      d.life = (d.life || 100) - dt;
+
+      if (d.bombCooldown <= 0 && d.bombsLeft > 0 && d.x > 80 && d.x < W - 80 && (time > 8 || wave > 1)) {
+        dropBomb(d);
+        d.bombCooldown = rand(1.2, 2.5);
+      }
+
+      if (Math.random() < 0.12) {
+        addSmoke(d.x - d.vx * 0.03, d.y + rand(-4, 4), rand(-6, 6), rand(-10, -2), rand(5, 9), rand(0.25, 0.5), [80, 82, 90]);
+      }
+
+      if (d.x < -120 || d.x > W + 120 || d.y > H * 0.55) {
+        drones.splice(i, 1);
+      }
+    }
+
+    // Bombs
+    for (let i = bombs.length - 1; i >= 0; i--) {
+      const b = bombs[i];
+      const moveDt = dt * enemyScale;
+      b.vy += b.gravity * moveDt;
+      b.x += b.vx * moveDt;
+      b.y += b.vy * moveDt;
+      b.trail.push({ x: b.x, y: b.y });
+      if (b.trail.length > 10) b.trail.shift();
+
+      if (Math.random() < 0.2) {
+        addSmoke(b.x, b.y, rand(-5, 5), rand(-8, -2), rand(4, 8), rand(0.18, 0.36), [95, 95, 105]);
+      }
+
+      if (b.y >= horizonY) {
+        createExplosion(b.x, b.y, rand(24, 36), false);
+        destroyBuildingAt(b.x, rand(5, 10));
+        bombs.splice(i, 1);
+      }
+    }
+
+    // Interceptors
+    for (let i = interceptors.length - 1; i >= 0; i--) {
+      const b = interceptors[i];
+      b.life -= dt;
+      b.arming -= dt;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.trail.push({ x: b.x, y: b.y });
+      if (b.trail.length > 18) b.trail.shift();
+
+      b.smokeTick -= dt;
+      if (b.smokeTick <= 0) {
+        b.smokeTick = 0.03;
+        addSmoke(b.x, b.y, rand(-8, 8), rand(-10, -2), rand(4, 8), rand(0.18, 0.35), [160, 180, 205]);
+      }
+
+      let collectedPowerup = false;
+      for (let pi = powerups.length - 1; pi >= 0; pi--) {
+        const p = powerups[pi];
+        if (dist(b.x, b.y, p.x, p.y) < p.r + 8) {
+          createExplosion(b.x, b.y, 34, true, b.power > 1 ? "power" : "normal");
+          applyPowerup(p.type);
+          powerups.splice(pi, 1);
+          interceptors.splice(i, 1);
+          collectedPowerup = true;
+          break;
+        }
+      }
+      if (collectedPowerup) continue;
+
+      const d = dist(b.x, b.y, b.tx, b.ty);
+      if ((d < 11 && b.arming <= 0) || b.life <= 0 || b.y < -30 || b.x < -50 || b.x > W + 50) {
+        createExplosion(b.x, b.y, rand(42, 60) * b.power, true, b.power > 1 ? "power" : "normal");
+        interceptors.splice(i, 1);
+      }
+    }
+
+    // Explosions
+    for (let i = explosions.length - 1; i >= 0; i--) {
+      const e = explosions[i];
+      e.life -= dt;
+      const t = 1 - e.life / e.maxLife;
+      e.r = lerp(0, e.maxR, Math.sin(t * Math.PI * 0.9));
+      if (e.life <= 0) explosions.splice(i, 1);
+    }
+
+    // Shockwaves
+    for (let i = shockwaves.length - 1; i >= 0; i--) {
+      const s = shockwaves[i];
+      s.life -= dt;
+      const t = 1 - s.life / s.maxLife;
+      s.r = lerp(5, s.maxR, t);
+      if (s.life <= 0) shockwaves.splice(i, 1);
+    }
+
+    // Explosion collisions
+    for (let ei = explosions.length - 1; ei >= 0; ei--) {
+      const e = explosions[ei];
+
+      for (let mi = missiles.length - 1; mi >= 0; mi--) {
+        const m = missiles[mi];
+        if ((m.spawnProtect || 0) <= 0 && dist(e.x, e.y, m.x, m.y) < e.r + 8) {
+          m.hp -= e.friendly ? 2 : 1;
+          if (m.hp <= 0) {
+            createExplosion(m.x, m.y, m.type === "heavy" ? rand(34, 48) : rand(26, 42), false, m.type === "cluster" ? "cluster" : "normal");
+            if (m.type === "cluster") addFloatingText("КАССЕТА УНИЧТОЖЕНА", m.x, m.y - 10, "#ffcf9f", 22);
+            if (m.type === "cluster" && !m.splitDone && Math.random() < 0.35) spawnGuaranteedPowerup(m.x, m.y, "slow");
+            else spawnPowerup(m.x, m.y);
+            missiles.splice(mi, 1);
+            score += m.type === "mini" ? 55 : m.type === "cluster" ? 180 : m.type === "heavy" ? 220 : 100;
+            totalDestroyed++;
+            launcher.hitFlash = 1;
+          }
+        }
+      }
+
+      for (let di = drones.length - 1; di >= 0; di--) {
+        const d = drones[di];
+        if (dist(e.x, e.y, d.x, d.y) < e.r + 16) {
+          d.hp -= e.friendly ? 2 : 1;
+          if (d.hp <= 0) {
+            createExplosion(d.x, d.y, rand(34, 52), false);
+            addFloatingText("ДРОН СБИТ", d.x, d.y - 10, "#ffbf92", 22);
+            addDebrisBurst(d.x, d.y, 18, true);
+            if (Math.random() < 0.45) spawnGuaranteedPowerup(d.x, d.y, Math.random() < 0.55 ? "heal" : "shield");
+            else spawnPowerup(d.x, d.y);
+            drones.splice(di, 1);
+            score += 220;
+            totalDestroyed++;
+          }
+        }
+      }
+
+      for (let bi = bombs.length - 1; bi >= 0; bi--) {
+        const b = bombs[bi];
+        if (dist(e.x, e.y, b.x, b.y) < e.r + 8) {
+          createExplosion(b.x, b.y, rand(16, 22), false);
+          bombs.splice(bi, 1);
+          score += 70;
+          totalDestroyed++;
+        }
+      }
+
+      for (let pi = powerups.length - 1; pi >= 0; pi--) {
+        const p = powerups[pi];
+        if (dist(e.x, e.y, p.x, p.y) < e.r + p.r) {
+          applyPowerup(p.type);
+          powerups.splice(pi, 1);
+        }
+      }
+    }
+
+    // Powerups
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const p = powerups[i];
+      p.life -= dt;
+      p.pulse += dt * 4;
+      p.swayPhase += dt * p.sway;
+      p.x += Math.sin(p.swayPhase) * 18 * dt + p.vx * dt;
+      p.y += p.vy * dt;
+
+      if (p.y > horizonY - 34) {
+        p.y = horizonY - 34;
+        p.vy = 0;
+        p.vx *= 0.94;
+      }
+      if (p.life <= 0) powerups.splice(i, 1);
+    }
+
+    // Shield drones
+    if (effects.shieldDrones > 0 && shieldDrones.length < 4 && Math.random() < dt * 1.2) spawnShieldDrone();
+    for (let i = shieldDrones.length - 1; i >= 0; i--) {
+      const d = shieldDrones[i];
+      d.life -= dt;
+      d.pulse += dt * 6;
+      d.orbit += dt * 1.3;
+
+      let target = null;
+      let best = 999999;
+      for (const m of missiles) {
+        const dd = dist(d.x, d.y, m.x, m.y);
+        if (dd < best) { best = dd; target = m; }
+      }
+
+      if (target && best < 180) {
+        const dx = target.x - d.x;
+        const dy = target.y - d.y;
+        const len = Math.hypot(dx, dy) || 1;
+        d.vx = dx / len * 220;
+        d.vy = dy / len * 220;
+      } else {
+        const ox = launcher.x + Math.cos(d.orbit + i * 1.2) * d.radius;
+        const oy = horizonY - 70 + Math.sin(d.orbit * 1.7 + i) * 26;
+        const dx = ox - d.x;
+        const dy = oy - d.y;
+        d.vx = dx * 2.2;
+        d.vy = dy * 2.2;
+      }
+
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+
+      for (let mi = missiles.length - 1; mi >= 0; mi--) {
+        const m = missiles[mi];
+        if (dist(d.x, d.y, m.x, m.y) < m.r + 12) {
+          createExplosion(m.x, m.y, m.type === "cluster" ? 34 : 26, true, m.type === "cluster" ? "cluster" : "normal");
+          addFloatingText("ЩИТ СБИЛ УГРОЗУ", m.x, m.y - 8, "#75e4ff", 16);
+          missiles.splice(mi, 1);
+          d.life -= 1.6;
+          score += m.type === "mini" ? 45 : m.type === "cluster" ? 160 : 90;
+          totalDestroyed++;
+          break;
+        }
+      }
+
+      if (d.life <= 0 || effects.shieldDrones <= 0) shieldDrones.splice(i, 1);
+    }
+
+    // Repair drones
+    for (let i = repairDrones.length - 1; i >= 0; i--) {
+      const d = repairDrones[i];
+      d.life -= dt;
+      d.pulse += dt * 4.2;
+
+      if (d.state === "approach") {
+        const dx = d.tx - d.x;
+        const dy = d.ty - d.y;
+        const len = Math.hypot(dx, dy) || 1;
+        d.x += dx / len * d.speed * dt;
+        d.y += dy / len * d.speed * dt;
+        if (len < 10) d.state = "repair";
+      } else if (d.state === "repair") {
+        if (d.healLeft > 0 && cityHealth < cityMaxHealth) {
+          const healAmount = dt * 4.2;
+          d.healLeft -= healAmount;
+          healCity(healAmount, d.x);
+          if (Math.random() < 0.45) {
+            particles.push({
+              x: d.x + rand(-12, 12),
+              y: d.y + rand(-8, 8),
+              vx: rand(-18, 18),
+              vy: rand(-28, -8),
+              r: rand(1.2, 3),
+              life: rand(0.22, 0.6),
+              maxLife: 0.6,
+              color: [120, 255, 200],
+              glow: true
+            });
+          }
+        } else {
+          d.state = "leave";
+          d.tx = d.x < W / 2 ? -80 : W + 80;
+          d.ty = rand(H * 0.16, H * 0.28);
+        }
+      } else {
+        const dx = d.tx - d.x;
+        const dy = d.ty - d.y;
+        const len = Math.hypot(dx, dy) || 1;
+        d.x += dx / len * d.speed * 1.15 * dt;
+        d.y += dy / len * d.speed * 1.15 * dt;
+      }
+
+      if (Math.random() < 0.35) {
+        particles.push({
+          x: d.x + rand(-6, 6),
+          y: d.y + rand(-5, 5),
+          vx: rand(-8, 8),
+          vy: rand(-10, -2),
+          r: rand(1, 2.4),
+          life: rand(0.18, 0.4),
+          maxLife: 0.4,
+          color: [120, 255, 200],
+          glow: true
+        });
+      }
+
+      if (d.life <= 0 || d.x < -120 || d.x > W + 120) repairDrones.splice(i, 1);
+    }
+
+    // Smoke
+    for (let i = smokePuffs.length - 1; i >= 0; i--) {
+      const s = smokePuffs[i];
+      s.life -= dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.size += dt * 10;
+      s.vx *= Math.pow(0.985, dt * 60);
+      s.vy -= 2 * dt;
+      if (s.life <= 0) smokePuffs.splice(i, 1);
+    }
+
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= Math.pow(0.985, dt * 60);
+      p.vy += 90 * dt;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Embers
+    for (let i = embers.length - 1; i >= 0; i--) {
+      const e = embers[i];
+      e.life -= dt;
+      e.x += e.vx * dt;
+      e.y += e.vy * dt;
+      e.vy += 16 * dt;
+      e.vx *= Math.pow(0.992, dt * 60);
+      if (e.life <= 0) embers.splice(i, 1);
+    }
+
+    if (cityHealth <= 0 && state === "playing") gameOver();
+  }
+
+  // ---------- Sky / palette ----------
+  function getDayAmount() {
+    const c = dayCycle;
+    let v = (Math.sin(c * TAU - Math.PI / 2) + 1) * 0.5;
+    v = Math.pow(v, 1.9);
+    return smoothstep(0.2, 0.92, v);
+  }
+
+  function getPalette() {
+    const day = getDayAmount();
+    return {
+      day,
+      skyTop: [
+        lerp(7, 120, day),
+        lerp(23, 180, day),
+        lerp(49, 255, day)
+      ],
+      skyMid: [
+        lerp(8, 170, day),
+        lerp(19, 210, day),
+        lerp(39, 255, day)
+      ],
+      skyBot: [
+        lerp(4, 255, day),
+        lerp(9, 175, day),
+        lerp(18, 130, day)
+      ],
+      horizonGlow: [
+        lerp(50, 255, day),
+        lerp(90, 180, day),
+        lerp(160, 120, day)
+      ]
+    };
+  }
+
+  function drawSky() {
+    const pal = getPalette();
+    const day = pal.day;
+
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, rgba(pal.skyTop[0], pal.skyTop[1], pal.skyTop[2], 1));
+    sky.addColorStop(0.38, rgba(pal.skyMid[0], pal.skyMid[1], pal.skyMid[2], 1));
+    sky.addColorStop(0.76, rgba(pal.skyBot[0], pal.skyBot[1], pal.skyBot[2], 1));
+    sky.addColorStop(1, rgba(lerp(2, 26, day), lerp(5, 42, day), lerp(12, 64, day), 1));
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // haze
+    const haze = ctx.createRadialGradient(W * 0.55, H * 0.22, 20, W * 0.55, H * 0.22, W * 0.52);
+    haze.addColorStop(0, rgba(lerp(80, 255, day), lerp(120, 225, day), lerp(255, 255, day), lerp(0.1, 0.08, day)));
+    haze.addColorStop(0.35, rgba(lerp(80, 255, day), lerp(100, 210, day), lerp(180, 250, day), lerp(0.06, 0.05, day)));
+    haze.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, W, H);
+
+    // moon and sun
+    const moonX = W * 0.82;
+    const moonY = H * 0.16;
+    const sunX = W * 0.16;
+    const sunY = H * 0.18;
+
+    const moonAlpha = 1 - day;
+    const sunAlpha = day;
+
+    if (moonAlpha > 0.01) {
+      glowCircle(moonX, moonY, 68, "rgba(210,230,255,ALPHA)", 0.15 * moonAlpha);
+      ctx.fillStyle = rgba(221, 232, 255, 0.95 * moonAlpha);
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, 24, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = rgba(6, 12, 25, 0.18 * moonAlpha);
+      ctx.beginPath();
+      ctx.arc(moonX + 8, moonY - 6, 24, 0, TAU);
+      ctx.fill();
+    }
+
+    if (sunAlpha > 0.01) {
+      glowCircle(sunX, sunY, 110, "rgba(255,220,140,ALPHA)", 0.18 * sunAlpha);
+      glowCircle(sunX, sunY, 62, "rgba(255,245,200,ALPHA)", 0.24 * sunAlpha);
+      ctx.fillStyle = rgba(255, 242, 185, 0.98 * sunAlpha);
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, 28, 0, TAU);
+      ctx.fill();
+    }
+
+    // stars
+    const starsAlpha = (1 - day) * 0.95;
+    for (const s of stars) {
+      const a = s.a * (0.7 + Math.sin(s.tw) * 0.3) * starsAlpha;
+      if (a <= 0.005) continue;
+      ctx.fillStyle = `rgba(220,235,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, TAU);
+      ctx.fill();
+    }
+
+    // background sparks
+    for (const sp of backgroundSparks) {
+      const a = (0.18 + (Math.sin(sp.t * 1.8) + 1) * 0.05) * (1 - day * 0.75);
+      ctx.strokeStyle = `rgba(120,170,255,${a})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(sp.x - sp.vx * 1.5, sp.y - sp.vy * 1.5);
+      ctx.stroke();
+    }
+
+    // horizon glow
+    const hg = ctx.createLinearGradient(0, H * 0.6, 0, H);
+    hg.addColorStop(0, `rgba(${pal.horizonGlow[0]},${pal.horizonGlow[1]},${pal.horizonGlow[2]},0)`);
+    hg.addColorStop(1, `rgba(${pal.horizonGlow[0]},${pal.horizonGlow[1]},${pal.horizonGlow[2]},${lerp(0.12, 0.18, day)})`);
+    ctx.fillStyle = hg;
+    ctx.fillRect(0, H * 0.55, W, H * 0.45);
+  }
+
+  function drawMountains() {
+    const day = getDayAmount();
+    function mountain(baseY, amp, c1, c2, c3, seedShift) {
+      ctx.beginPath();
+      ctx.moveTo(-10, H);
+      for (let x = -10; x <= W + 10; x += 16) {
+        const y =
+          baseY -
+          Math.sin((x + seedShift) * 0.006) * amp * 0.5 -
+          Math.sin((x + seedShift) * 0.014) * amp * 0.25 -
+          Math.sin((x + seedShift) * 0.028) * amp * 0.15;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W + 10, H);
+      ctx.closePath();
+      ctx.fillStyle = rgba(lerp(c1[0], c2[0], day), lerp(c1[1], c2[1], day), lerp(c1[2], c2[2], day), lerp(0.95, 0.9, day));
+      ctx.fill();
+    }
+    mountain(H * 0.66, H * 0.12, [10,18,34], [75,100,130], [0,0,0], 0);
+    mountain(H * 0.69, H * 0.09, [8,14,26], [90,110,145], [0,0,0], 350);
+  }
+
+  function drawCity() {
+    const day = getDayAmount();
+
+    const g = ctx.createLinearGradient(0, horizonY - 90, 0, H);
+    g.addColorStop(0, `rgba(${lerp(80,255,day)},${lerp(120,200,day)},${lerp(255,120,day)},${lerp(0.08,0.12,day)})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, horizonY - 90, W, 110);
+
+    for (let i = 0; i < city.length; i++) {
+      const b = city[i];
+      if (!b.alive) continue;
+      const pulse = 0.06 + (Math.sin(skylineGlow[i].pulse) + 1) * 0.03;
+      glowCircle(
+        b.x + b.w / 2,
+        horizonY - b.h * 0.3,
+        Math.max(b.w * 0.8, b.h * 0.45),
+        "rgba(80,140,255,ALPHA)",
+        pulse * (1 - day * 0.55)
+      );
+
+      const grad = ctx.createLinearGradient(b.x, b.y, b.x, horizonY);
+      grad.addColorStop(0, rgba(lerp(18, 90, day), lerp(30, 110, day), lerp(52, 125, day), 0.95));
+      grad.addColorStop(0.65, rgba(lerp(10, 65, day), lerp(17, 78, day), lerp(31, 92, day), 0.98));
+      grad.addColorStop(1, rgba(lerp(8, 45, day), lerp(12, 58, day), lerp(22, 72, day), 1));
+      ctx.fillStyle = grad;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+
+      // damage marks
+      if (b.damage > 0) {
+        ctx.fillStyle = `rgba(30,20,18,${Math.min(0.28, b.damage / 120)})`;
+        for (let k = 0; k < 3; k++) {
+          const xx = b.x + rand(4, b.w - 12);
+          const yy = b.y + rand(8, b.h - 16);
+          ctx.fillRect(xx, yy, rand(6, 14), rand(6, 20));
+        }
+      }
+
+      ctx.fillStyle = rgba(160, 190, 255, 0.06 + day * 0.05);
+      ctx.fillRect(b.x, b.y, 1.5, b.h);
+      ctx.fillRect(b.x + b.w - 1.5, b.y, 1.5, b.h);
+
+      ctx.strokeStyle = rgba(110, 150, 255, 0.16 * (1 - day * 0.55));
+      ctx.lineWidth = 1.3;
+      if (b.roofType === 1) {
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.w * 0.35, b.y);
+        ctx.lineTo(b.x + b.w * 0.5, b.y - 12);
+        ctx.lineTo(b.x + b.w * 0.65, b.y);
+        ctx.stroke();
+      } else if (b.roofType === 2) {
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.w * 0.5, b.y);
+        ctx.lineTo(b.x + b.w * 0.5, b.y - 18);
+        ctx.stroke();
+        glowCircle(
+          b.x + b.w * 0.5,
+          b.y - 18,
+          8,
+          "rgba(255,90,90,ALPHA)",
+          (0.25 + Math.sin(time * 4 + b.x) * 0.08) * (1 - day * 0.75)
+        );
+      } else if (b.roofType === 3) {
+        ctx.fillStyle = rgba(130,170,255,0.10 + day * 0.05);
+        ctx.fillRect(b.x + b.w * 0.24, b.y - 6, b.w * 0.52, 6);
+      }
+
+      for (const w of b.windows) {
+        const onBase = w.on ? 0.58 + Math.sin(time * 0.8 + w.flick) * 0.12 : 0.04;
+        const on = onBase * (1 - day * 0.9);
+        ctx.fillStyle = `rgba(255,210,120,${on})`;
+        ctx.fillRect(w.x, w.y, 4.5, 6.5);
+        if (w.on && on > 0.02) {
+          glowCircle(w.x + 2, w.y + 3, 8, "rgba(255,190,100,ALPHA)", 0.06 * (1 - day * 0.8));
+        }
+      }
+    }
+
+    const fieldBack = ctx.createLinearGradient(0, horizonY, 0, H);
+    fieldBack.addColorStop(0, rgba(lerp(14, 38, day), lerp(22, 56, day), lerp(18, 34, day), 1));
+    fieldBack.addColorStop(0.42, rgba(lerp(12, 32, day), lerp(20, 50, day), lerp(17, 30, day), 1));
+    fieldBack.addColorStop(1, rgba(lerp(10, 22, day), lerp(17, 34, day), lerp(14, 24, day), 1));
+    ctx.fillStyle = fieldBack;
+    ctx.fillRect(0, horizonY, W, H - horizonY);
+
+    const fieldShape = ctx.createLinearGradient(0, horizonY + 8, 0, H);
+    fieldShape.addColorStop(0, rgba(lerp(24, 52, day), lerp(34, 74, day), lerp(25, 42, day), 0.98));
+    fieldShape.addColorStop(0.58, rgba(lerp(18, 40, day), lerp(28, 58, day), lerp(21, 34, day), 1));
+    fieldShape.addColorStop(1, rgba(lerp(12, 24, day), lerp(20, 34, day), lerp(16, 22, day), 1));
+    ctx.fillStyle = fieldShape;
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY + 22);
+    for (let x = 0; x <= W; x += 24) {
+      const yy = horizonY + 20 + Math.sin(x * 0.015 + 0.4) * 5 + Math.sin(x * 0.041) * 2.5;
+      ctx.lineTo(x, yy);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+
+    const riverWidth = Math.max(88, W * 0.11);
+    const riverGlow = ctx.createLinearGradient(0, horizonY + 8, riverWidth, H);
+    riverGlow.addColorStop(0, rgba(lerp(30, 58, day), lerp(58, 112, day), lerp(74, 128, day), 0.55));
+    riverGlow.addColorStop(0.55, rgba(lerp(22, 46, day), lerp(42, 90, day), lerp(58, 112, day), 0.46));
+    riverGlow.addColorStop(1, rgba(lerp(10, 26, day), lerp(20, 44, day), lerp(28, 56, day), 0));
+    ctx.fillStyle = riverGlow;
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY + 14);
+    ctx.bezierCurveTo(riverWidth * 0.42, horizonY + 8, riverWidth * 0.68, H * 0.86, riverWidth * 0.92, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+
+    const river = ctx.createLinearGradient(0, horizonY + 12, riverWidth * 0.9, H);
+    river.addColorStop(0, rgba(lerp(18, 44, day), lerp(40, 96, day), lerp(62, 146, day), 0.86));
+    river.addColorStop(0.5, rgba(lerp(14, 34, day), lerp(28, 72, day), lerp(46, 118, day), 0.92));
+    river.addColorStop(1, rgba(lerp(10, 22, day), lerp(18, 42, day), lerp(28, 76, day), 0.96));
+    ctx.fillStyle = river;
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY + 18);
+    ctx.bezierCurveTo(riverWidth * 0.28, horizonY + 12, riverWidth * 0.48, H * 0.82, riverWidth * 0.76, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, horizonY + 18);
+    ctx.bezierCurveTo(riverWidth * 0.28, horizonY + 12, riverWidth * 0.48, H * 0.82, riverWidth * 0.76, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.clip();
+    for (let y = horizonY + 20; y < H; y += 14) {
+      const waveShift = Math.sin(time * 1.2 + y * 0.035) * 9;
+      ctx.strokeStyle = `rgba(${Math.floor(lerp(110, 150, day))},${Math.floor(lerp(155, 205, day))},${Math.floor(lerp(180, 235, day))},${0.05 + day * 0.04})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(4 + waveShift, y);
+      ctx.quadraticCurveTo(riverWidth * 0.28 + waveShift * 0.5, y - 4, riverWidth * 0.7 + waveShift, y + 3);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.fillStyle = rgba(lerp(34, 68, day), lerp(54, 96, day), lerp(36, 58, day), 0.95);
+    ctx.fillRect(0, horizonY + 10, W, 10);
+
+    for (let i = 0; i < W; i += 14) {
+      const grassH = 4.5 + (Math.sin(i * 0.1 + time * 0.55) + 1) * 2.7;
+      ctx.strokeStyle = `rgba(${Math.floor(lerp(44, 70, day))},${Math.floor(lerp(72, 108, day))},${Math.floor(lerp(46, 68, day))},${0.32 + day * 0.10})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(i, horizonY + 20);
+      ctx.lineTo(i + 1.5, horizonY + 20 - grassH);
+      ctx.stroke();
+    }
+
+    for (let i = 8; i < W; i += 22) {
+      const clump = 2 + (Math.sin(i * 0.07) + 1) * 1.6;
+      ctx.strokeStyle = `rgba(${Math.floor(lerp(38, 66, day))},${Math.floor(lerp(64, 102, day))},${Math.floor(lerp(38, 62, day))},${0.22 + day * 0.08})`;
+      ctx.beginPath();
+      ctx.moveTo(i, horizonY + 22);
+      ctx.lineTo(i - 2, horizonY + 22 - clump * 1.2);
+      ctx.moveTo(i + 2, horizonY + 22);
+      ctx.lineTo(i + 4, horizonY + 22 - clump);
+      ctx.stroke();
+    }
+
+    for (let i = 0; i < W; i += 46) {
+      ctx.fillStyle = `rgba(18,22,16,${0.12 + 0.04 * Math.sin(i * 0.13)})`;
+      ctx.beginPath();
+      ctx.arc(i + 7, horizonY + 27 + Math.sin(i * 0.11) * 1.5, 1.8 + ((i / 46) % 2), 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  function drawSmoke() {
+    for (const s of smokePuffs) {
+      const a = clamp(s.life / s.maxLife, 0, 1) * 0.26;
+      const [r, g, b] = s.color;
+      glowCircle(s.x, s.y, s.size * 1.8, `rgba(${r},${g},${b},ALPHA)`, a * 0.5);
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  function drawLauncher() {
+    const x = launcher.x;
+    const y = launcher.y;
+
+    glowCircle(x, y + 14, 52, "rgba(80,160,255,ALPHA)", 0.07);
+    if (effects.shieldDrones > 0) {
+      glowCircle(x, y + 14, 78, "rgba(110,235,255,ALPHA)", 0.09);
+    }
+
+    const platformGrad = ctx.createLinearGradient(x - 55, y, x + 55, y + 36);
+    platformGrad.addColorStop(0, "#152038");
+    platformGrad.addColorStop(1, "#090f1e");
+    ctx.fillStyle = platformGrad;
+    ctx.beginPath();
+    ctx.moveTo(x - 48, y + 16);
+    ctx.lineTo(x + 48, y + 16);
+    ctx.lineTo(x + 62, y + 34);
+    ctx.lineTo(x - 62, y + 34);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(100,170,255,0.20)";
+    ctx.fillRect(x - 36, y + 22, 72, 3);
+
+    ctx.save();
+    ctx.translate(x, y + 6);
+    ctx.rotate(launcher.angle);
+
+    const barrelGrad = ctx.createLinearGradient(0, -6, 54, 6);
+    barrelGrad.addColorStop(0, "#b1c0d8");
+    barrelGrad.addColorStop(0.3, "#5c6a84");
+    barrelGrad.addColorStop(1, "#182133");
+    ctx.fillStyle = barrelGrad;
+    ctx.beginPath();
+    ctx.roundRect(-8, -6, 60, 12, 6);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(120,210,255,0.12)";
+    ctx.fillRect(6, -2, 38, 2);
+
+    if (launcher.cooldown > 0) {
+      glowCircle(48, 0, 20, "rgba(255,220,130,ALPHA)", 0.18);
+    }
+    ctx.restore();
+
+    const jointGrad = ctx.createRadialGradient(x, y + 6, 3, x, y + 6, 18);
+    jointGrad.addColorStop(0, "#8290aa");
+    jointGrad.addColorStop(1, "#202a3d");
+    ctx.fillStyle = jointGrad;
+    ctx.beginPath();
+    ctx.arc(x, y + 6, 16, 0, TAU);
+    ctx.fill();
+
+    if (launcher.hitFlash > 0.01) {
+      glowCircle(x, y + 6, 30, "rgba(130,240,255,ALPHA)", launcher.hitFlash * 0.22);
+    }
+  }
+
+  function drawRealisticRocket(m) {
+    const angle = Math.atan2(m.vy, m.vx);
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.rotate(angle);
+
+    let body = "#f0f2f7";
+    let stripe = "#ff6f51";
+    let glow = "rgba(255,180,120,ALPHA)";
+    let length = 18;
+    let radius = 4;
+
+    if (m.type === "cluster") {
+      body = "#ffdb8c";
+      stripe = "#ff7a00";
+      glow = "rgba(255,170,70,ALPHA)";
+      length = 30;
+      radius = 7;
+    } else if (m.type === "mini") {
+      body = "#f4f6fb";
+      stripe = "#ff905e";
+      glow = "rgba(255,170,120,ALPHA)";
+      length = 12;
+      radius = 2.6;
+    } else if (m.type === "heavy") {
+      body = "#d9dee6";
+      stripe = "#ff3d4f";
+      glow = "rgba(255,120,120,ALPHA)";
+      length = 24;
+      radius = 5.5;
+    }
+
+    glowCircle(0, 0, length * 1.05, glow, 0.12);
+
+    // flame
+    const flameLen = m.type === "heavy" ? 18 : m.type === "mini" ? 10 : 14;
+    const flick = 0.7 + Math.sin(time * 35 + m.x * 0.03) * 0.25;
+    ctx.fillStyle = m.type === "cluster" ? "rgba(255,180,120,0.85)" : "rgba(255,190,120,0.9)";
+    ctx.beginPath();
+    ctx.moveTo(-length * 0.46, 0);
+    ctx.lineTo(-length * 0.46 - flameLen * flick, -radius * 0.65);
+    ctx.lineTo(-length * 0.46 - flameLen * 0.55, 0);
+    ctx.lineTo(-length * 0.46 - flameLen * flick, radius * 0.65);
+    ctx.closePath();
+    ctx.fill();
+    glowCircle(-length * 0.6 - flameLen * 0.2, 0, flameLen * 1.2, m.type === "cluster" ? "rgba(255,160,120,ALPHA)" : "rgba(255,180,120,ALPHA)", 0.18);
+
+    // body
+    const grad = ctx.createLinearGradient(-length * 0.5, 0, length * 0.5, 0);
+    grad.addColorStop(0, "#bcc7d7");
+    grad.addColorStop(0.3, body);
+    grad.addColorStop(1, "#8b95a5");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(length * 0.5, 0);
+    ctx.lineTo(length * 0.18, -radius);
+    ctx.lineTo(-length * 0.45, -radius);
+    ctx.lineTo(-length * 0.5, 0);
+    ctx.lineTo(-length * 0.45, radius);
+    ctx.lineTo(length * 0.18, radius);
+    ctx.closePath();
+    ctx.fill();
+
+    // stripe
+    ctx.fillStyle = stripe;
+    ctx.fillRect(-length * 0.04, -radius, length * 0.16, radius * 2);
+
+    // fins
+    ctx.fillStyle = "#7a8596";
+    ctx.beginPath();
+    ctx.moveTo(-length * 0.35, -radius * 0.75);
+    ctx.lineTo(-length * 0.52, -radius * 1.45);
+    ctx.lineTo(-length * 0.38, -radius * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-length * 0.35, radius * 0.75);
+    ctx.lineTo(-length * 0.52, radius * 1.45);
+    ctx.lineTo(-length * 0.38, radius * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawMissiles() {
+    for (const m of missiles) {
+      for (let i = 0; i < m.trail.length; i++) {
+        const t = i / m.trail.length;
+        const p = m.trail[i];
+        let color = "rgba(255,120,90,ALPHA)";
+        if (m.type === "cluster") color = "rgba(210,120,255,ALPHA)";
+        else if (m.type === "heavy") color = "rgba(255,80,90,ALPHA)";
+        glowCircle(p.x, p.y, (m.type === "mini" ? 4 : 7) + t * 8, color, t * 0.16);
+      }
+      drawRealisticRocket(m);
+    }
+  }
+
+  function drawInterceptors() {
+    for (const b of interceptors) {
+      for (let i = 0; i < b.trail.length; i++) {
+        const t = i / b.trail.length;
+        const p = b.trail[i];
+        glowCircle(p.x, p.y, 7 + t * 9, b.power > 1 ? "rgba(255,220,120,ALPHA)" : "rgba(120,220,255,ALPHA)", t * 0.22);
+      }
+
+      const a = Math.atan2(b.vy, b.vx);
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(a);
+
+      glowCircle(0, 0, 16, b.power > 1 ? "rgba(255,220,120,ALPHA)" : "rgba(140,230,255,ALPHA)", 0.18);
+
+      // booster flame
+      ctx.fillStyle = b.power > 1 ? "rgba(255,210,120,0.88)" : "rgba(150,240,255,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(-7, 0);
+      ctx.lineTo(-15, -3);
+      ctx.lineTo(-12, 0);
+      ctx.lineTo(-15, 3);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = b.power > 1 ? "#fff2cc" : "#d7f6ff";
+      ctx.beginPath();
+      ctx.moveTo(9, 0);
+      ctx.lineTo(-5, -2.6);
+      ctx.lineTo(-2, 0);
+      ctx.lineTo(-5, 2.6);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }
+
+  function drawDrones() {
+    for (const d of drones) {
+      for (let i = 0; i < d.trail.length; i++) {
+        const t = i / d.trail.length;
+        const p = d.trail[i];
+        glowCircle(p.x, p.y, 5 + t * 7, "rgba(255,120,90,ALPHA)", t * 0.10);
+      }
+
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      const tilt = Math.atan2(d.vy, d.vx) * 0.25;
+      ctx.rotate(tilt);
+
+      glowCircle(0, 0, 28, "rgba(255,100,90,ALPHA)", 0.08);
+
+      ctx.fillStyle = "#2d323e";
+      ctx.beginPath();
+      ctx.roundRect(-d.body * 0.5, -5, d.body, 10, 5);
+      ctx.fill();
+
+      ctx.fillStyle = "#1f2530";
+      ctx.beginPath();
+      ctx.moveTo(-d.body * 0.16, -6);
+      ctx.lineTo(d.body * 0.4, 0);
+      ctx.lineTo(-d.body * 0.16, 6);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = "#4b515d";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-d.wing, -1);
+      ctx.lineTo(d.wing, -1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-d.wing * 0.84, 5);
+      ctx.lineTo(d.wing * 0.84, 5);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(255,110,90,0.9)";
+      ctx.fillRect(-d.body * 0.18, -2, 5, 4);
+      glowCircle(-d.body * 0.16, 0, 10, "rgba(255,120,90,ALPHA)", 0.12);
+
+      if (d.bombsLeft > 0) {
+        ctx.fillStyle = "#757e8d";
+        for (let i = 0; i < d.bombsLeft; i++) {
+          ctx.beginPath();
+          ctx.arc(-4 + i * 8, 10, 2.5, 0, TAU);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+    }
+  }
+
+  function drawBombs() {
+    for (const b of bombs) {
+      for (let i = 0; i < b.trail.length; i++) {
+        const t = i / b.trail.length;
+        const p = b.trail[i];
+        glowCircle(p.x, p.y, 4 + t * 5, "rgba(255,140,100,ALPHA)", t * 0.12);
+      }
+
+      const a = Math.atan2(b.vy, b.vx);
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(a);
+      glowCircle(0, 0, 14, "rgba(255,150,110,ALPHA)", 0.10);
+      ctx.fillStyle = "#d3d7dd";
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(2, -4);
+      ctx.lineTo(-6, -3);
+      ctx.lineTo(-7, 0);
+      ctx.lineTo(-6, 3);
+      ctx.lineTo(2, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#929aa8";
+      ctx.fillRect(-6, -1, 4, 2);
+      ctx.restore();
+    }
+  }
+
+  function drawPowerups() {
+    for (const p of powerups) {
+      let c1 = "#7fffc6";
+      let c2 = "rgba(120,255,200,ALPHA)";
+      if (p.type === "infinite") { c1 = "#9fe8ff"; c2 = "rgba(120,220,255,ALPHA)"; }
+      else if (p.type === "power") { c1 = "#ffd48a"; c2 = "rgba(255,210,120,ALPHA)"; }
+      else if (p.type === "slow") { c1 = "#a7c3ff"; c2 = "rgba(160,180,255,ALPHA)"; }
+      else if (p.type === "shield") { c1 = "#75e4ff"; c2 = "rgba(120,240,255,ALPHA)"; }
+      else if (p.type === "split") { c1 = "#ffb9ff"; c2 = "rgba(255,180,245,ALPHA)"; }
+
+      const pulse = 0.62 + Math.sin(p.pulse) * 0.22;
+      const canopyY = p.y - 30;
+      ctx.strokeStyle = "rgba(230,240,255,0.88)";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 16, canopyY + 2);
+      ctx.lineTo(p.x - 7, p.y - 12);
+      ctx.moveTo(p.x, canopyY + 5);
+      ctx.lineTo(p.x, p.y - 12);
+      ctx.moveTo(p.x + 16, canopyY + 2);
+      ctx.lineTo(p.x + 7, p.y - 12);
+      ctx.stroke();
+
+      const canopy = ctx.createLinearGradient(p.x, canopyY - 13, p.x, canopyY + 9);
+      canopy.addColorStop(0, "rgba(255,255,255,0.99)");
+      canopy.addColorStop(1, "rgba(185,210,255,0.96)");
+      ctx.fillStyle = canopy;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 19, canopyY + 2);
+      ctx.quadraticCurveTo(p.x, canopyY - 20, p.x + 19, canopyY + 2);
+      ctx.lineTo(p.x - 19, canopyY + 2);
+      ctx.fill();
+
+      glowCircle(p.x, p.y, 38, c2, 0.2 * pulse);
+      ctx.fillStyle = "rgba(11,16,28,0.95)";
+      ctx.beginPath();
+      ctx.roundRect(p.x - 18, p.y - 17, 36, 34, 11);
+      ctx.fill();
+      ctx.strokeStyle = c1;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.roundRect(p.x - 18, p.y - 17, 36, 34, 11);
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      if (p.type === "heal") {
+        ctx.fillStyle = "#dfffee";
+        ctx.beginPath();
+        ctx.roundRect(-10, -10, 20, 20, 5);
+        ctx.fill();
+        ctx.fillStyle = "#2dd38b";
+        ctx.fillRect(-3, -7, 6, 14);
+        ctx.fillRect(-7, -3, 14, 6);
+      } else if (p.type === "power") {
+        ctx.fillStyle = "#ffe7aa";
+        ctx.beginPath();
+        ctx.moveTo(-2, -11);
+        ctx.lineTo(8, -2);
+        ctx.lineTo(2, -2);
+        ctx.lineTo(7, 11);
+        ctx.lineTo(-8, 1);
+        ctx.lineTo(-2, 1);
+        ctx.closePath();
+        ctx.fill();
+      } else if (p.type === "slow") {
+        ctx.strokeStyle = "#dce6ff";
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, TAU);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, -5);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(4, 2);
+        ctx.stroke();
+      } else if (p.type === "infinite") {
+        ctx.strokeStyle = "#def7ff";
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        ctx.ellipse(-4, 0, 5, 3.8, 0, 0, TAU);
+        ctx.ellipse(4, 0, 5, 3.8, 0, 0, TAU);
+        ctx.stroke();
+      } else if (p.type === "shield") {
+        ctx.fillStyle = "#d6faff";
+        ctx.beginPath();
+        ctx.moveTo(0, -11);
+        ctx.lineTo(9, -6);
+        ctx.lineTo(7, 5);
+        ctx.lineTo(0, 11);
+        ctx.lineTo(-7, 5);
+        ctx.lineTo(-9, -6);
+        ctx.closePath();
+        ctx.fill();
+      } else if (p.type === "split") {
+        ctx.strokeStyle = "#ffe0ff";
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(0, -9);
+        ctx.lineTo(0, 9);
+        ctx.moveTo(-7, -6);
+        ctx.lineTo(-7, 6);
+        ctx.moveTo(7, -6);
+        ctx.lineTo(7, 6);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawShieldDrones() {
+    for (const d of shieldDrones) {
+      glowCircle(d.x, d.y, 22, "rgba(117,228,255,ALPHA)", 0.12 + Math.sin(d.pulse) * 0.03);
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      ctx.fillStyle = "#dffaff";
+      ctx.beginPath();
+      ctx.roundRect(-10, -4, 20, 8, 4);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(117,228,255,0.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-15, 0); ctx.lineTo(15, 0);
+      ctx.moveTo(0, -8); ctx.lineTo(0, 8);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawRepairDrones() {
+    for (const d of repairDrones) {
+      glowCircle(d.x, d.y, 24, "rgba(120,255,200,ALPHA)", 0.08 + Math.sin(d.pulse) * 0.02);
+
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      ctx.fillStyle = "#c1ffe9";
+      ctx.beginPath();
+      ctx.roundRect(-10, -4, 20, 8, 4);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,255,200,0.8)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-16, 0);
+      ctx.lineTo(16, 0);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(120,255,200,0.95)";
+      ctx.fillRect(-3, -12, 6, 24);
+      ctx.fillRect(-12, -3, 24, 6);
+      ctx.restore();
+
+      if (d.state === "repair") {
+        ctx.strokeStyle = "rgba(120,255,200,0.9)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y + 6);
+        ctx.lineTo(d.x, d.ty);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawExplosions() {
+    for (const s of shockwaves) {
+      const a = (s.life / s.maxLife) * s.alpha;
+      ctx.strokeStyle = `rgba(${s.color[0]},${s.color[1]},${s.color[2]},${a * 0.55})`;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, TAU);
+      ctx.stroke();
+    }
+
+    for (const e of explosions) {
+      const t = e.life / e.maxLife;
+      if (e.style === "cluster") {
+        glowCircle(e.x, e.y, e.r * 1.35, "rgba(210,120,255,ALPHA)", 0.20 * t);
+        glowCircle(e.x, e.y, e.r * 0.72, "rgba(255,240,180,ALPHA)", 0.26 * t);
+      } else if (e.friendly) {
+        glowCircle(e.x, e.y, e.r * 1.25, "rgba(110,230,255,ALPHA)", 0.18 * t);
+        glowCircle(e.x, e.y, e.r * 0.72, "rgba(255,250,210,ALPHA)", 0.25 * t);
+      } else {
+        glowCircle(e.x, e.y, e.r * 1.28, "rgba(255,120,80,ALPHA)", 0.22 * t);
+        glowCircle(e.x, e.y, e.r * 0.78, "rgba(255,220,140,ALPHA)", 0.30 * t);
+      }
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      const a = clamp(p.life / p.maxLife, 0, 1);
+      const c = p.color;
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, TAU);
+      ctx.fill();
+      if (p.glow) {
+        glowCircle(p.x, p.y, p.r * 4.5, `rgba(${c[0]},${c[1]},${c[2]},ALPHA)`, a * 0.12);
+      }
+    }
+
+    for (const e of embers) {
+      const a = clamp(e.life / e.maxLife, 0, 1);
+      ctx.fillStyle = `rgba(255,160,90,${a})`;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.size, 0, TAU);
+      ctx.fill();
+      glowCircle(e.x, e.y, e.size * 4, "rgba(255,120,70,ALPHA)", a * 0.12);
+    }
+  }
+
+  function drawWaveAlert() {
+    if (waveAlert <= 0) return;
+
+    const t = waveAlert / 2.8;
+    const pulse = (Math.sin(time * 10) + 1) * 0.5;
+    const sirenX = W * 0.5;
+    const sirenY = 72;
+
+    ctx.save();
+
+    const red = 0.16 + pulse * 0.1;
+    ctx.fillStyle = `rgba(255,40,40,${red * t})`;
+    ctx.fillRect(0, 0, W, H);
+
+    for (let i = 0; i < 3; i++) {
+      const rr = 30 + i * 34 + (1 - t) * 80 + pulse * 10;
+      ctx.strokeStyle = `rgba(255,80,80,${(0.26 - i * 0.06) * t})`;
+      ctx.lineWidth = 4 - i;
+      ctx.beginPath();
+      ctx.arc(sirenX, sirenY, rr, Math.PI * 0.1, Math.PI * 0.9);
+      ctx.stroke();
+    }
+
+    glowCircle(sirenX, sirenY, 80, "rgba(255,80,80,ALPHA)", 0.12 * t);
+    ctx.fillStyle = "rgba(255,235,235,0.98)";
+    ctx.textAlign = "center";
+    ctx.font = "800 34px Inter, Arial";
+    drawTextShadow("ВОЛНА " + wave, sirenX, 80, "800 34px Inter, Arial", "rgba(255,245,245,0.98)");
+    ctx.font = "700 16px Inter, Arial";
+    drawTextShadow("ВОЗДУШНАЯ ТРЕВОГА", sirenX, 104, "700 16px Inter, Arial", "rgba(255,210,210,0.95)");
+    ctx.textAlign = "start";
+
+    ctx.restore();
+  }
+
+  function drawShieldDome() {
+    return;
+  }
+
+  function drawHUD() {
+    const panelW = Math.min(450, W * 0.36);
+    const panelH = 104;
+    const x = 24;
+    const y = 22;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(8,14,26,0.66)";
+    ctx.beginPath();
+    ctx.roundRect(x, y, panelW, panelH, 18);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(120,170,255,0.18)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, panelW, panelH, 18);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(235,245,255,0.96)";
+    ctx.font = "700 26px Inter, Arial";
+    ctx.fillText("NIGHT SHIELD", x + 18, y + 31);
+
+    ctx.fillStyle = "rgba(160,190,220,0.9)";
+    ctx.font = "600 14px Inter, Arial";
+    ctx.fillText("СЧЁТ", x + 18, y + 56);
+    ctx.fillText("ВОЛНА", x + 130, y + 56);
+    ctx.fillText("ПЕРЕХВАТ", x + 220, y + 56);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 24px Inter, Arial";
+    ctx.fillText(String(score).padStart(5, "0"), x + 18, y + 82);
+    ctx.fillText(String(wave), x + 130, y + 82);
+    ctx.fillText(String(totalDestroyed), x + 220, y + 82);
+
+    const barX = x + panelW + 18;
+    const barY = y + 22;
+    const barW = Math.min(320, W * 0.24);
+    const barH = 26;
+
+    ctx.fillStyle = "rgba(8,14,26,0.65)";
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 13);
+    ctx.fill();
+
+    const hpT = cityHealth / cityMaxHealth;
+    const hpGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+    hpGrad.addColorStop(0, "#55d3ff");
+    hpGrad.addColorStop(0.45, "#70ffcf");
+    hpGrad.addColorStop(1, "#f6d06a");
+    ctx.fillStyle = hpGrad;
+    ctx.beginPath();
+    ctx.roundRect(barX + 3, barY + 3, (barW - 6) * hpT, barH - 6, 10);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(120,170,255,0.18)";
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 13);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(220,235,255,0.95)";
+    ctx.font = "700 14px Inter, Arial";
+    ctx.fillText("ЦЕЛОСТНОСТЬ ГОРОДА", barX, barY - 8);
+
+    const eX = barX;
+    const eY = barY + 46;
+    const eW = barW;
+    const eH = 16;
+    ctx.fillStyle = "rgba(8,14,26,0.65)";
+    ctx.beginPath();
+    ctx.roundRect(eX, eY, eW, eH, 8);
+    ctx.fill();
+
+    const enT = launcher.energy / launcher.energyMax;
+    const eGrad = ctx.createLinearGradient(eX, eY, eX + eW, eY);
+    eGrad.addColorStop(0, "#74b9ff");
+    eGrad.addColorStop(1, "#c8f0ff");
+    ctx.fillStyle = eGrad;
+    ctx.beginPath();
+    ctx.roundRect(eX + 2, eY + 2, (eW - 4) * enT, eH - 4, 7);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(220,235,255,0.9)";
+    ctx.font = "600 12px Inter, Arial";
+    ctx.fillText("ЗАРЯД УСТАНОВКИ", eX, eY - 7);
+
+    const mapW = 190;
+    const mapH = 92;
+    const mapX = W - mapW - 24;
+    const mapY = 22;
+
+    ctx.fillStyle = "rgba(8,14,26,0.65)";
+    ctx.beginPath();
+    ctx.roundRect(mapX, mapY, mapW, mapH, 18);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,170,255,0.18)";
+    ctx.beginPath();
+    ctx.roundRect(mapX, mapY, mapW, mapH, 18);
+    ctx.stroke();
+
+    const sx = mapW / W;
+    const sy = mapH / H;
+
+    ctx.fillStyle = "rgba(80,110,180,0.18)";
+    ctx.fillRect(mapX + 8, mapY + mapH * 0.6, mapW - 16, 2);
+
+    for (const b of city) {
+      ctx.fillStyle = b.alive ? "rgba(130,210,255,0.7)" : "rgba(255,100,80,0.28)";
+      ctx.fillRect(mapX + b.x * sx, mapY + b.y * sy, Math.max(2, b.w * sx), Math.max(2, b.h * sy));
+    }
+    for (const m of missiles) {
+      ctx.fillStyle = m.type === "cluster" ? "rgba(210,120,255,0.95)" : "rgba(255,120,90,0.95)";
+      ctx.fillRect(mapX + m.x * sx, mapY + m.y * sy, 2.5, 2.5);
+    }
+    for (const d of drones) {
+      ctx.fillStyle = "rgba(255,170,100,0.95)";
+      ctx.fillRect(mapX + d.x * sx, mapY + d.y * sy, 3, 2);
+    }
+    ctx.fillStyle = "rgba(150,235,255,1)";
+    ctx.beginPath();
+    ctx.arc(mapX + launcher.x * sx, mapY + launcher.y * sy, 3.5, 0, TAU);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(220,235,255,0.95)";
+    ctx.font = "700 12px Inter, Arial";
+    ctx.fillText("ТАКТИЧЕСКИЙ ОБЗОР", mapX + 12, mapY + 16);
+
+    // active effects
+    const effectsX = W - 260;
+    const effectsY = mapY + mapH + 14;
+    const active = [];
+    if (effects.infiniteAmmo > 0) active.push(["∞ ПАТРОНЫ", effects.infiniteAmmo, "#9fe8ff"]);
+    if (effects.powerShot > 0) active.push(["СИЛЬНЫЙ УДАР", effects.powerShot, "#ffd48a"]);
+    if (effects.slowTime > 0) active.push(["ЗАМЕДЛЕНИЕ", effects.slowTime, "#a7c3ff"]);
+    if (effects.shieldDrones > 0) active.push(["ДРОНЫ-ЩИТЫ", effects.shieldDrones, "#75e4ff"]);
+    if (effects.splitShot > 0) active.push(["РАЗДВОЕНИЕ", effects.splitShot, "#ffb9ff"]);
+
+    if (active.length) {
+      ctx.fillStyle = "rgba(8,14,26,0.65)";
+      ctx.beginPath();
+      ctx.roundRect(effectsX, effectsY, 236, 22 + active.length * 22, 16);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.beginPath();
+      ctx.roundRect(effectsX, effectsY, 236, 22 + active.length * 22, 16);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(220,235,255,0.95)";
+      ctx.font = "700 12px Inter, Arial";
+      ctx.fillText("АКТИВНЫЕ БОНУСЫ", effectsX + 12, effectsY + 15);
+      active.forEach((a, i) => {
+        ctx.fillStyle = a[2];
+        ctx.font = "700 12px Inter, Arial";
+        ctx.fillText(a[0], effectsX + 12, effectsY + 36 + i * 22);
+        ctx.fillStyle = "rgba(230,240,255,0.95)";
+        ctx.fillText(a[1].toFixed(1) + " c", effectsX + 162, effectsY + 36 + i * 22);
+      });
+    }
+
+    pauseButton.w = 54;
+    pauseButton.h = 54;
+    pauseButton.x = W - pauseButton.w - 24;
+    pauseButton.y = H - pauseButton.h - 20;
+
+    ctx.fillStyle = "rgba(8,14,26,0.72)";
+    ctx.beginPath();
+    ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 16);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,170,255,0.18)";
+    ctx.beginPath();
+    ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 16);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(225,240,255,0.95)";
+    if (paused) {
+      ctx.beginPath();
+      ctx.moveTo(pauseButton.x + 20, pauseButton.y + 15);
+      ctx.lineTo(pauseButton.x + 20, pauseButton.y + 39);
+      ctx.lineTo(pauseButton.x + 38, pauseButton.y + 27);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillRect(pauseButton.x + 18, pauseButton.y + 14, 6, 26);
+      ctx.fillRect(pauseButton.x + 30, pauseButton.y + 14, 6, 26);
+    }
+
+    ctx.fillStyle = "rgba(215,230,255,0.72)";
+    ctx.font = "600 13px Inter, Arial";
+    const bottomHint = window.innerWidth < 900 ? "Касание — огонь   •   кнопка справа снизу — пауза   •   бонусы подбираются выстрелом" : "ЛКМ — огонь   •   ESC / P — пауза   •   бонусы подбираются выстрелом";
+    ctx.fillText(bottomHint, 26, H - 18);
+
+    ctx.restore();
+  }
+
+  function drawFloatingTexts() {
+    ctx.save();
+    ctx.textAlign = "center";
+    for (const f of floatingTexts) {
+      const a = clamp(f.life / f.maxLife, 0, 1);
+      ctx.globalAlpha = a;
+      glowCircle(f.x, f.y - 4, Math.max(36, f.size * 1.7), `rgba(255,255,255,ALPHA)`, 0.04 + a * 0.04);
+      drawTextShadow(f.text, f.x, f.y, `900 ${f.size}px Inter, Arial`, f.color, "rgba(0,0,0,0.52)", 0, 3);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = "start";
+    ctx.restore();
+  }
+
+  function drawCrosshair() {
+    const x = mouse.x;
+    const y = mouse.y;
+    const active = state === "playing" && !paused;
+    ctx.save();
+    ctx.strokeStyle = active ? "rgba(150,235,255,0.85)" : "rgba(180,180,180,0.45)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 14, 0, TAU);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x - 22, y);
+    ctx.lineTo(x - 8, y);
+    ctx.moveTo(x + 8, y);
+    ctx.lineTo(x + 22, y);
+    ctx.moveTo(x, y - 22);
+    ctx.lineTo(x, y - 8);
+    ctx.moveTo(x, y + 8);
+    ctx.lineTo(x, y + 22);
+    ctx.stroke();
+
+    glowCircle(x, y, 18, active ? "rgba(120,220,255,ALPHA)" : "rgba(180,180,180,ALPHA)", 0.07);
+    ctx.restore();
+  }
+
+  function drawOrientationPrompt() {
+    if (!isPortraitPhone()) return;
+    ctx.fillStyle = "rgba(2,4,8,0.84)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(W * 0.5, H * 0.5 - 28);
+    ctx.rotate(-Math.PI / 2);
+    ctx.strokeStyle = "rgba(150,220,255,0.95)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(-42, -24, 84, 48, 12);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(36, 0);
+    ctx.lineTo(58, 0);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(150,220,255,0.95)";
+    ctx.beginPath();
+    ctx.moveTo(60, 0);
+    ctx.lineTo(48, -8);
+    ctx.lineTo(48, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.textAlign = "center";
+    drawTextShadow("ПОВЕРНИ ТЕЛЕФОН", W * 0.5, H * 0.5 + 42, "800 34px Inter, Arial", "rgba(240,248,255,0.98)");
+    ctx.fillStyle = "rgba(190,210,230,0.92)";
+    ctx.font = "600 18px Inter, Arial";
+    ctx.fillText("Для игры нужен горизонтальный режим", W * 0.5, H * 0.5 + 72);
+    ctx.textAlign = "start";
+  }
+
+  function drawTitle() {
+    ctx.save();
+
+    const overlay = ctx.createLinearGradient(0, 0, 0, H);
+    overlay.addColorStop(0, "rgba(3,8,18,0.15)");
+    overlay.addColorStop(1, "rgba(1,2,5,0.58)");
+    ctx.fillStyle = overlay;
+    ctx.fillRect(0, 0, W, H);
+
+    const cx = W * 0.5;
+    const cy = H * 0.28;
+
+    glowCircle(cx, cy, 170, "rgba(90,160,255,ALPHA)", 0.14);
+
+    ctx.textAlign = "center";
+    drawTextShadow("NIGHT SHIELD DELUXE", cx, cy, `800 ${Math.floor(Math.min(W, H) * 0.062)}px Inter, Arial`, "rgba(240,248,255,0.98)");
+    ctx.fillStyle = "rgba(170,205,235,0.92)";
+    ctx.font = `600 ${Math.floor(Math.min(W, H) * 0.022)}px Inter, Arial`;
+    ctx.fillText("Оборона города от ракет, дронов и кассетных угроз", cx, cy + 44);
+
+    const boxW = Math.min(680, W * 0.78);
+    const boxH = 190;
+    const bx = cx - boxW / 2;
+    const by = H * 0.48;
+
+    ctx.fillStyle = "rgba(8,14,26,0.62)";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 24);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,170,255,0.18)";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 24);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(232,242,255,0.94)";
+    ctx.font = "700 20px Inter, Arial";
+    ctx.fillText("Защищай город, подрывай угрозы и перехватывай бонусы", cx, by + 38);
+
+    ctx.fillStyle = "rgba(185,205,225,0.9)";
+    ctx.font = "500 16px Inter, Arial";
+    ctx.fillText("Обычные ракеты, кассетные угрозы, беспилотники, бомбы и парашютные бустеры.", cx, by + 72);
+    ctx.fillText("Волны становятся опаснее, а сцена живёт своим циклом дня и ночи.", cx, by + 98);
+
+    const pulse = 0.55 + Math.sin(time * 3.5) * 0.22;
+    ctx.fillStyle = `rgba(120,220,255,${pulse})`;
+    ctx.beginPath();
+    ctx.roundRect(cx - 110, by + 130, 220, 32, 14);
+    ctx.fill();
+
+    ctx.fillStyle = "#021017";
+    ctx.font = "800 15px Inter, Arial";
+    ctx.fillText(window.innerWidth < 900 ? "КАСАНИЕ ДЛЯ СТАРТА" : "ENTER / КЛИК ДЛЯ СТАРТА", cx, by + 152);
+
+    ctx.textAlign = "start";
+    ctx.restore();
+  }
+
+  function drawPause() {
+    ctx.fillStyle = "rgba(2,4,8,0.38)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    drawTextShadow("ПАУЗА", W / 2, H / 2 - 10, "800 54px Inter, Arial", "rgba(240,248,255,0.96)");
+    ctx.fillStyle = "rgba(180,205,225,0.88)";
+    ctx.font = "600 18px Inter, Arial";
+    ctx.fillText(window.innerWidth < 900 ? "Нажми кнопку паузы, чтобы продолжить" : "Нажми ESC / P, чтобы продолжить оборону", W / 2, H / 2 + 28);
+    ctx.textAlign = "start";
+  }
+
+  function drawGameOver() {
+    ctx.fillStyle = "rgba(2,4,8,0.56)";
+    ctx.fillRect(0, 0, W, H);
+
+    const boxW = Math.min(560, W * 0.74);
+    const boxH = 270;
+    const x = W / 2 - boxW / 2;
+    const y = H / 2 - boxH / 2;
+
+    ctx.fillStyle = "rgba(8,14,26,0.78)";
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 26);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,120,100,0.2)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 26);
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    glowCircle(W / 2, y + 54, 110, "rgba(255,100,80,ALPHA)", 0.12);
+    drawTextShadow("ГОРОД ПАЛ", W / 2, y + 68, "800 48px Inter, Arial", "rgba(255,240,240,0.98)");
+    ctx.fillStyle = "rgba(220,230,245,0.92)";
+    ctx.font = "600 18px Inter, Arial";
+    ctx.fillText(`Счёт: ${score}`, W / 2, y + 122);
+    ctx.fillText(`Лучшая оборона: ${best}`, W / 2, y + 150);
+    ctx.fillText(`Достигнутая волна: ${wave}`, W / 2, y + 178);
+    ctx.fillText(`Перехвачено угроз: ${totalDestroyed}`, W / 2, y + 206);
+
+    const pulse = 0.55 + Math.sin(time * 3) * 0.2;
+    ctx.fillStyle = `rgba(140,230,255,${pulse})`;
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - 100, y + 224, 200, 30, 14);
+    ctx.fill();
+    ctx.fillStyle = "#021017";
+    ctx.font = "800 15px Inter, Arial";
+    ctx.fillText("R / ENTER — НОВАЯ ИГРА", W / 2, y + 244);
+
+    ctx.textAlign = "start";
+  }
+
+  function drawFlashAndVignette() {
+    if (flash > 0.001) {
+      ctx.fillStyle = `rgba(255,240,220,${flash})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, Math.max(W, H) * 0.72);
+    v.addColorStop(0, "rgba(0,0,0,0)");
+    v.addColorStop(1, "rgba(0,0,0,0.38)");
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // ---------- Loop ----------
+  let last = performance.now();
+
+  function frame(now) {
+    let dt = (now - last) / 1000;
+    last = now;
+    dt = Math.min(dt, 0.033);
+
+    if (state === "title" && mouse.justPressed && !isPortraitPhone()) startGame();
+
+    update(dt);
+
+    ctx.save();
+    const shakeX = (Math.random() - 0.5) * screenShake;
+    const shakeY = (Math.random() - 0.5) * screenShake;
+    ctx.translate(shakeX, shakeY);
+
+    drawSky();
+    drawMountains();
+    drawCity();
+    drawSmoke();
+    drawExplosions();
+    drawParticles();
+    drawBombs();
+    drawDrones();
+    drawMissiles();
+    drawInterceptors();
+    drawShieldDome();
+    drawShieldDrones();
+    drawRepairDrones();
+    drawPowerups();
+    drawLauncher();
+
+    ctx.restore();
+
+    drawHUD();
+    drawFloatingTexts();
+    drawWaveAlert();
+
+    if (state === "title") drawTitle();
+    if (paused && state === "playing") drawPause();
+    if (state === "gameover") drawGameOver();
+    if (isPortraitPhone()) drawOrientationPrompt();
+
+    drawFlashAndVignette();
+    if (!pointer.isTouch && !isPortraitPhone()) drawCrosshair();
+
+    mouse.justPressed = false;
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  initStars();
+  initCity();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
