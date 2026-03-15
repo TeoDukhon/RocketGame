@@ -2199,86 +2199,86 @@
     const mobile = useWideMobileView();
 
     if (mobile) {
-      const safe = 10;
-      const topY = 10;
-      const statW = Math.min(208, W * 0.34);
-      const statH = 68;
+      const safe = Math.max(6, Math.min(10, W * 0.012));
+      const topY = safe;
+      const statW = Math.min(172, W * 0.295);
+      const statH = 54;
       const statX = safe;
 
       ctx.save();
-      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      ctx.fillStyle = "rgba(8,14,26,0.66)";
       ctx.beginPath();
-      ctx.roundRect(statX, topY, statW, statH, 16);
+      ctx.roundRect(statX, topY, statW, statH, 14);
       ctx.fill();
-      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.strokeStyle = "rgba(120,170,255,0.16)";
       ctx.beginPath();
-      ctx.roundRect(statX, topY, statW, statH, 16);
+      ctx.roundRect(statX, topY, statW, statH, 14);
       ctx.stroke();
 
       ctx.fillStyle = "rgba(235,245,255,0.95)";
-      ctx.font = "700 16px Inter, Arial";
-      ctx.fillText("NIGHT SHIELD", statX + 12, topY + 19);
+      ctx.font = "700 13px Inter, Arial";
+      ctx.fillText("NIGHT SHIELD", statX + 10, topY + 16);
 
       ctx.fillStyle = "rgba(170,195,220,0.92)";
-      ctx.font = "600 9px Inter, Arial";
-      ctx.fillText("СЧЁТ", statX + 12, topY + 35);
-      ctx.fillText("ВОЛНА", statX + 76, topY + 35);
-      ctx.fillText("СБИТО", statX + 132, topY + 35);
+      ctx.font = "600 8px Inter, Arial";
+      ctx.fillText("СЧЁТ", statX + 10, topY + 29);
+      ctx.fillText("ВОЛНА", statX + 64, topY + 29);
+      ctx.fillText("СБИТО", statX + 114, topY + 29);
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = "700 15px Inter, Arial";
-      ctx.fillText(String(score).padStart(5, "0"), statX + 12, topY + 54);
-      ctx.fillText(String(wave), statX + 76, topY + 54);
-      ctx.fillText(String(totalDestroyed), statX + 132, topY + 54);
+      ctx.font = "700 12px Inter, Arial";
+      ctx.fillText(String(score).padStart(5, "0"), statX + 10, topY + 45);
+      ctx.fillText(String(wave), statX + 64, topY + 45);
+      ctx.fillText(String(totalDestroyed), statX + 114, topY + 45);
 
-      const mapW = Math.min(156, W * 0.29);
-      const mapH = 68;
+      const mapW = Math.min(132, W * 0.235);
+      const mapH = 54;
       const mapX = W - mapW - safe;
       const mapY = topY;
 
-      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      ctx.fillStyle = "rgba(8,14,26,0.66)";
       ctx.beginPath();
-      ctx.roundRect(mapX, mapY, mapW, mapH, 16);
+      ctx.roundRect(mapX, mapY, mapW, mapH, 14);
       ctx.fill();
-      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.strokeStyle = "rgba(120,170,255,0.16)";
       ctx.beginPath();
-      ctx.roundRect(mapX, mapY, mapW, mapH, 16);
+      ctx.roundRect(mapX, mapY, mapW, mapH, 14);
       ctx.stroke();
 
       const sx = mapW / W;
       const sy = mapH / H;
       ctx.fillStyle = "rgba(80,110,180,0.18)";
-      ctx.fillRect(mapX + 6, mapY + mapH * 0.6, mapW - 12, 2);
+      ctx.fillRect(mapX + 5, mapY + mapH * 0.6, mapW - 10, 1.5);
       for (const b of city) {
         ctx.fillStyle = b.alive ? "rgba(130,210,255,0.7)" : "rgba(255,100,80,0.28)";
-        ctx.fillRect(mapX + b.x * sx, mapY + b.y * sy, Math.max(2, b.w * sx), Math.max(2, b.h * sy));
+        ctx.fillRect(mapX + b.x * sx, mapY + b.y * sy, Math.max(1.5, b.w * sx), Math.max(1.5, b.h * sy));
       }
       for (const m of missiles) {
         ctx.fillStyle = m.type === "cluster" ? "rgba(210,120,255,0.95)" : "rgba(255,120,90,0.95)";
-        ctx.fillRect(mapX + m.x * sx, mapY + m.y * sy, 2.2, 2.2);
+        ctx.fillRect(mapX + m.x * sx, mapY + m.y * sy, 1.9, 1.9);
       }
       for (const d of drones) {
         ctx.fillStyle = "rgba(255,170,100,0.95)";
-        ctx.fillRect(mapX + d.x * sx, mapY + d.y * sy, 2.8, 2);
+        ctx.fillRect(mapX + d.x * sx, mapY + d.y * sy, 2.2, 1.7);
       }
       ctx.fillStyle = "rgba(150,235,255,1)";
       ctx.beginPath();
-      ctx.arc(mapX + launcher.x * sx, mapY + launcher.y * sy, 2.8, 0, TAU);
+      ctx.arc(mapX + launcher.x * sx, mapY + launcher.y * sy, 2.2, 0, TAU);
       ctx.fill();
-      ctx.fillStyle = "rgba(220,235,255,0.95)";
-      ctx.font = "700 10px Inter, Arial";
-      ctx.fillText("ОБЗОР", mapX + 8, mapY + 12);
+      ctx.fillStyle = "rgba(220,235,255,0.92)";
+      ctx.font = "700 8px Inter, Arial";
+      ctx.fillText("ОБЗОР", mapX + 6, mapY + 10);
 
-      const barGap = 10;
+      const barGap = 8;
       const barsX = statX + statW + barGap;
       const barsRight = mapX - barGap;
-      const barsW = Math.max(100, barsRight - barsX);
-      const hpY = topY + 6;
-      const barH = 18;
+      const barsW = Math.max(78, barsRight - barsX);
+      const hpY = topY + 4;
+      const barH = 14;
 
-      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      ctx.fillStyle = "rgba(8,14,26,0.66)";
       ctx.beginPath();
-      ctx.roundRect(barsX, hpY, barsW, barH, 10);
+      ctx.roundRect(barsX, hpY, barsW, barH, 8);
       ctx.fill();
       const hpT = cityHealth / cityMaxHealth;
       const hpGrad = ctx.createLinearGradient(barsX, hpY, barsX + barsW, hpY);
@@ -2287,16 +2287,16 @@
       hpGrad.addColorStop(1, "#f6d06a");
       ctx.fillStyle = hpGrad;
       ctx.beginPath();
-      ctx.roundRect(barsX + 2, hpY + 2, (barsW - 4) * hpT, barH - 4, 8);
+      ctx.roundRect(barsX + 2, hpY + 2, Math.max(0, (barsW - 4) * hpT), barH - 4, 6);
       ctx.fill();
-      ctx.fillStyle = "rgba(235,245,255,0.92)";
-      ctx.font = "700 9px Inter, Arial";
-      ctx.fillText("ГОРОД", barsX + 6, hpY - 2);
+      ctx.fillStyle = "rgba(235,245,255,0.9)";
+      ctx.font = "700 8px Inter, Arial";
+      ctx.fillText("ГОРОД", barsX + 5, hpY - 1);
 
-      const energyY = hpY + 30;
-      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      const energyY = hpY + 22;
+      ctx.fillStyle = "rgba(8,14,26,0.66)";
       ctx.beginPath();
-      ctx.roundRect(barsX, energyY, barsW, 14, 8);
+      ctx.roundRect(barsX, energyY, barsW, 12, 7);
       ctx.fill();
       const enT = launcher.energy / launcher.energyMax;
       const eGrad = ctx.createLinearGradient(barsX, energyY, barsX + barsW, energyY);
@@ -2304,89 +2304,81 @@
       eGrad.addColorStop(1, "#c8f0ff");
       ctx.fillStyle = eGrad;
       ctx.beginPath();
-      ctx.roundRect(barsX + 2, energyY + 2, (barsW - 4) * enT, 10, 6);
+      ctx.roundRect(barsX + 2, energyY + 2, Math.max(0, (barsW - 4) * enT), 8, 5);
       ctx.fill();
-      ctx.fillStyle = "rgba(235,245,255,0.92)";
-      ctx.font = "700 9px Inter, Arial";
-      ctx.fillText("ЗАРЯД", barsX + 6, energyY - 2);
+      ctx.fillStyle = "rgba(235,245,255,0.9)";
+      ctx.font = "700 8px Inter, Arial";
+      ctx.fillText("ЗАРЯД", barsX + 5, energyY - 1);
 
       const active = [];
-      if (effects.infiniteAmmo > 0) active.push(["infinite", effects.infiniteAmmo, "#9fe8ff"]);
-      if (effects.powerShot > 0) active.push(["power", effects.powerShot, "#ffd48a"]);
-      if (effects.slowTime > 0) active.push(["slow", effects.slowTime, "#a7c3ff"]);
-      if (effects.shieldDrones > 0) active.push(["shield", effects.shieldDrones, "#75e4ff"]);
-      if (effects.splitShot > 0) active.push(["split", effects.splitShot, "#ffb9ff"]);
+      if (effects.infiniteAmmo > 0) active.push(["∞ ПАТРОНЫ", effects.infiniteAmmo, "infinite"]);
+      if (effects.powerShot > 0) active.push(["СИЛЬНЫЙ УДАР", effects.powerShot, "power"]);
+      if (effects.slowTime > 0) active.push(["ЗАМЕДЛЕНИЕ", effects.slowTime, "slow"]);
+      if (effects.shieldDrones > 0) active.push(["ДРОНЫ-ЩИТЫ", effects.shieldDrones, "shield"]);
+      if (effects.splitShot > 0) active.push(["РАЗДВОЕНИЕ", effects.splitShot, "split"]);
 
-      const effectsW = Math.min(Math.max(190, active.length * 54 + 24), W * 0.56);
-      const effectsH = 52;
-      const effectsX = (W - effectsW) * 0.5;
-      const effectsY = H - effectsH - 8;
-      ctx.fillStyle = "rgba(8,14,26,0.72)";
+      const effectsW = Math.min(172, W * 0.295);
+      const effectsX = W - effectsW - safe;
+      const effectsLineH = 16;
+      const effectsH = active.length ? (20 + active.length * effectsLineH + 8) : 40;
+      const effectsY = mapY + mapH + 8;
+      ctx.fillStyle = "rgba(8,14,26,0.68)";
       ctx.beginPath();
-      ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 16);
+      ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 14);
       ctx.fill();
-      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.strokeStyle = "rgba(120,170,255,0.16)";
       ctx.beginPath();
-      ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 16);
+      ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 14);
       ctx.stroke();
-      ctx.fillStyle = "rgba(220,235,255,0.95)";
-      ctx.font = "700 10px Inter, Arial";
-      ctx.fillText("БОНУСЫ", effectsX + 10, effectsY + 12);
+      ctx.fillStyle = "rgba(220,235,255,0.94)";
+      ctx.font = "700 8px Inter, Arial";
+      ctx.fillText("АКТИВНЫЕ БУСТЕРЫ", effectsX + 8, effectsY + 11);
 
       if (active.length) {
-        const slotStep = Math.min(54, (effectsW - 18) / active.length);
         active.forEach((a, i) => {
-          const cx = effectsX + 16 + i * slotStep + slotStep * 0.5 - 12;
-          const cy = effectsY + 28;
-          ctx.fillStyle = "rgba(18,28,46,0.85)";
-          ctx.beginPath();
-          ctx.roundRect(cx - 16, cy - 14, 32, 28, 10);
-          ctx.fill();
-          ctx.strokeStyle = "rgba(120,170,255,0.14)";
-          ctx.beginPath();
-          ctx.roundRect(cx - 16, cy - 14, 32, 28, 10);
-          ctx.stroke();
-          drawPowerupGlyph(a[0], cx, cy - 1, 0.62);
+          const rowY = effectsY + 24 + i * effectsLineH;
+          drawPowerupGlyph(a[2], effectsX + 12, rowY - 1, 0.42);
           ctx.fillStyle = "rgba(235,245,255,0.96)";
-          ctx.font = "700 9px Inter, Arial";
-          ctx.textAlign = "center";
-          ctx.fillText(a[1].toFixed(1) + "с", cx, effectsY + 46);
+          ctx.font = "700 8px Inter, Arial";
+          ctx.fillText(a[0], effectsX + 22, rowY + 3);
+          ctx.textAlign = "right";
+          ctx.fillText(a[1].toFixed(1) + "с", effectsX + effectsW - 8, rowY + 3);
           ctx.textAlign = "start";
         });
       } else {
         ctx.fillStyle = "rgba(180,200,225,0.72)";
-        ctx.font = "600 10px Inter, Arial";
-        ctx.fillText("Нет активных бонусов", effectsX + 10, effectsY + 32);
+        ctx.font = "600 8px Inter, Arial";
+        ctx.fillText("Нет активных бустеров", effectsX + 8, effectsY + 26);
       }
 
-      pauseButton.w = 46;
-      pauseButton.h = 46;
-      pauseButton.x = W - pauseButton.w - 10;
-      pauseButton.y = H - pauseButton.h - 12;
+      pauseButton.w = 40;
+      pauseButton.h = 40;
+      pauseButton.x = W - pauseButton.w - safe;
+      pauseButton.y = H - pauseButton.h - safe;
       ctx.fillStyle = "rgba(8,14,26,0.76)";
       ctx.beginPath();
-      ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 14);
+      ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 12);
       ctx.fill();
-      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.strokeStyle = "rgba(120,170,255,0.16)";
       ctx.beginPath();
-      ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 14);
+      ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 12);
       ctx.stroke();
       ctx.fillStyle = "rgba(225,240,255,0.95)";
       if (paused) {
         ctx.beginPath();
-        ctx.moveTo(pauseButton.x + 17, pauseButton.y + 13);
-        ctx.lineTo(pauseButton.x + 17, pauseButton.y + 33);
-        ctx.lineTo(pauseButton.x + 32, pauseButton.y + 23);
+        ctx.moveTo(pauseButton.x + 15, pauseButton.y + 11);
+        ctx.lineTo(pauseButton.x + 15, pauseButton.y + 29);
+        ctx.lineTo(pauseButton.x + 28, pauseButton.y + 20);
         ctx.closePath();
         ctx.fill();
       } else {
-        ctx.fillRect(pauseButton.x + 15, pauseButton.y + 12, 5, 22);
-        ctx.fillRect(pauseButton.x + 26, pauseButton.y + 12, 5, 22);
+        ctx.fillRect(pauseButton.x + 13, pauseButton.y + 10, 4, 20);
+        ctx.fillRect(pauseButton.x + 23, pauseButton.y + 10, 4, 20);
       }
 
-      ctx.fillStyle = "rgba(215,230,255,0.7)";
-      ctx.font = "600 10px Inter, Arial";
-      ctx.fillText("Касание — огонь", 10, H - 14);
+      ctx.fillStyle = "rgba(215,230,255,0.68)";
+      ctx.font = "600 8px Inter, Arial";
+      ctx.fillText("Касание — огонь", safe, H - 10);
       ctx.restore();
       return;
     }
