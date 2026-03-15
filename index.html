@@ -110,7 +110,7 @@
     const rect = canvas.getBoundingClientRect();
     const sx = clientX - rect.left;
     const sy = clientY - rect.top;
-    const scale = getSceneScale();
+    const scale = getRenderSceneScale();
     if (scale !== 1) {
       mouse.x = (sx - W * 0.5) / scale + W * 0.5;
       mouse.y = (sy - H * 0.5) / scale + H * 0.5;
@@ -124,45 +124,15 @@
     return window.innerWidth < 900 && window.innerHeight > window.innerWidth;
   }
 
-  function isMobileLayout() {
-    return window.innerWidth < 900;
-  }
-
-  function getSceneScale() {
-    if (!isMobileLayout() || isPortraitPhone()) return 1;
-    const aspect = W / Math.max(1, H);
-    return clamp(0.76 + (aspect - 1.6) * 0.07, 0.72, 0.82);
-  }
-
-  function getSceneWorldWidth() {
-    return W / getSceneScale();
-  }
-
-  function getSceneWorldHeight() {
-    return H / getSceneScale();
-  }
-
-  function getSceneWorldLeft() {
-    return -(getSceneWorldWidth() - W) * 0.5;
-  }
-
-  function getSceneWorldRight() {
-    return getSceneWorldLeft() + getSceneWorldWidth();
-  }
-
-  function getSceneWorldTop() {
-    return -(getSceneWorldHeight() - H) * 0.5;
-  }
-
-  function getSceneWorldBottom() {
-    return getSceneWorldTop() + getSceneWorldHeight();
+  function getRenderSceneScale() {
+    return (window.innerWidth < 900 && !isPortraitPhone()) ? 0.88 : 1;
   }
 
   function pointInPauseButton(x, y) {
-    const scale = getSceneScale();
-    const screenX = scale !== 1 ? (x - W * 0.5) * scale + W * 0.5 : x;
-    const screenY = scale !== 1 ? (y - H * 0.5) * scale + H * 0.5 : y;
-    return screenX >= pauseButton.x && screenX <= pauseButton.x + pauseButton.w && screenY >= pauseButton.y && screenY <= pauseButton.y + pauseButton.h;
+    const scale = getRenderSceneScale();
+    const sx = scale !== 1 ? (x - W * 0.5) * scale + W * 0.5 : x;
+    const sy = scale !== 1 ? (y - H * 0.5) * scale + H * 0.5 : y;
+    return sx >= pauseButton.x && sx <= pauseButton.x + pauseButton.w && sy >= pauseButton.y && sy <= pauseButton.y + pauseButton.h;
   }
 
   function togglePause() {
@@ -305,14 +275,11 @@
 
   function initStars() {
     stars = [];
-    const sceneLeft = getSceneWorldLeft();
-    const sceneTop = getSceneWorldTop();
-    const sceneWidth = getSceneWorldWidth();
-    const count = Math.floor((sceneWidth * H) / 8500);
+    const count = Math.floor((W * H) / 8500);
     for (let i = 0; i < count; i++) {
       stars.push({
-        x: sceneLeft + Math.random() * sceneWidth,
-        y: sceneTop + Math.random() * (H * 0.72),
+        x: Math.random() * W,
+        y: Math.random() * H * 0.72,
         r: Math.random() * 1.8 + 0.3,
         a: Math.random() * 0.8 + 0.2,
         tw: Math.random() * TAU
@@ -322,8 +289,8 @@
     backgroundSparks = [];
     for (let i = 0; i < 22; i++) {
       backgroundSparks.push({
-        x: rand(sceneLeft, sceneLeft + sceneWidth),
-        y: rand(sceneTop, sceneTop + H * 0.55),
+        x: rand(0, W),
+        y: rand(0, H * 0.55),
         vx: rand(-8, 8),
         vy: rand(4, 14),
         t: rand(0, 6)
@@ -336,10 +303,8 @@
     city = [];
     skylineGlow = [];
 
-    const sceneLeft = getSceneWorldLeft();
-    const sceneRight = getSceneWorldRight();
-    let x = sceneLeft;
-    while (x < sceneRight) {
+    let x = 0;
+    while (x < W) {
       const bw = rand(W * 0.026, W * 0.066);
       const bh = rand(H * 0.08, H * 0.28);
       const isTower = Math.random() < 0.18;
@@ -464,7 +429,7 @@
       swayPhase: Math.random() * TAU,
       r: 18,
       pulse: Math.random() * TAU,
-      life: 34,
+      life: 30,
       parachute: true
     });
   }
@@ -923,12 +888,9 @@
       sp.t += dt;
       sp.x += sp.vx * dt;
       sp.y += sp.vy * dt;
-      const sceneLeft = getSceneWorldLeft();
-      const sceneRight = getSceneWorldRight();
-      const sceneTop = getSceneWorldTop();
-      if (sp.y > H * 0.65 || sp.x < sceneLeft - 20 || sp.x > sceneRight + 20) {
-        sp.x = rand(sceneLeft, sceneRight);
-        sp.y = rand(sceneTop, sceneTop + H * 0.25);
+      if (sp.y > H * 0.65 || sp.x < -20 || sp.x > W + 20) {
+        sp.x = rand(0, W);
+        sp.y = rand(0, H * 0.25);
         sp.vx = rand(-8, 8);
         sp.vy = rand(4, 14);
       }
@@ -1190,7 +1152,7 @@
     // Powerups
     for (let i = powerups.length - 1; i >= 0; i--) {
       const p = powerups[i];
-      p.life -= p.y >= horizonY - 34 ? dt * 0.35 : dt;
+      p.life -= dt;
       p.pulse += dt * 4;
       p.swayPhase += dt * p.sway;
       p.x += Math.sin(p.swayPhase) * 18 * dt + p.vx * dt;
@@ -1198,8 +1160,8 @@
 
       if (p.y > horizonY - 34) {
         p.y = horizonY - 34;
-        p.vy = 0;
-        p.vx *= 0.94;
+        powerups.splice(i, 1);
+        continue;
       }
       if (p.life <= 0) powerups.splice(i, 1);
     }
@@ -1395,12 +1357,8 @@
     sky.addColorStop(0.38, rgba(pal.skyMid[0], pal.skyMid[1], pal.skyMid[2], 1));
     sky.addColorStop(0.76, rgba(pal.skyBot[0], pal.skyBot[1], pal.skyBot[2], 1));
     sky.addColorStop(1, rgba(lerp(2, 26, day), lerp(5, 42, day), lerp(12, 64, day), 1));
-    const sceneLeft = getSceneWorldLeft();
-    const sceneTop = getSceneWorldTop();
-    const sceneWidth = getSceneWorldWidth();
-    const sceneHeight = getSceneWorldHeight();
     ctx.fillStyle = sky;
-    ctx.fillRect(sceneLeft, sceneTop, sceneWidth, sceneHeight);
+    ctx.fillRect(0, 0, W, H);
 
     // haze
     const haze = ctx.createRadialGradient(W * 0.55, H * 0.22, 20, W * 0.55, H * 0.22, W * 0.52);
@@ -1408,7 +1366,7 @@
     haze.addColorStop(0.35, rgba(lerp(80, 255, day), lerp(100, 210, day), lerp(180, 250, day), lerp(0.06, 0.05, day)));
     haze.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = haze;
-    ctx.fillRect(sceneLeft, sceneTop, sceneWidth, sceneHeight);
+    ctx.fillRect(0, 0, W, H);
 
     // moon and sun
     const moonX = W * 0.82;
@@ -1467,17 +1425,15 @@
     hg.addColorStop(0, `rgba(${pal.horizonGlow[0]},${pal.horizonGlow[1]},${pal.horizonGlow[2]},0)`);
     hg.addColorStop(1, `rgba(${pal.horizonGlow[0]},${pal.horizonGlow[1]},${pal.horizonGlow[2]},${lerp(0.12, 0.18, day)})`);
     ctx.fillStyle = hg;
-    ctx.fillRect(sceneLeft, H * 0.55, sceneWidth, sceneHeight - H * 0.55);
+    ctx.fillRect(0, H * 0.55, W, H * 0.45);
   }
 
   function drawMountains() {
     const day = getDayAmount();
     function mountain(baseY, amp, c1, c2, c3, seedShift) {
-      const sceneLeft = getSceneWorldLeft();
-      const sceneRight = getSceneWorldRight();
       ctx.beginPath();
-      ctx.moveTo(sceneLeft - 10, H);
-      for (let x = sceneLeft - 10; x <= sceneRight + 10; x += 16) {
+      ctx.moveTo(-10, H);
+      for (let x = -10; x <= W + 10; x += 16) {
         const y =
           baseY -
           Math.sin((x + seedShift) * 0.006) * amp * 0.5 -
@@ -1485,7 +1441,7 @@
           Math.sin((x + seedShift) * 0.028) * amp * 0.15;
         ctx.lineTo(x, y);
       }
-      ctx.lineTo(sceneRight + 10, H);
+      ctx.lineTo(W + 10, H);
       ctx.closePath();
       ctx.fillStyle = rgba(lerp(c1[0], c2[0], day), lerp(c1[1], c2[1], day), lerp(c1[2], c2[2], day), lerp(0.95, 0.9, day));
       ctx.fill();
@@ -1500,11 +1456,8 @@
     const g = ctx.createLinearGradient(0, horizonY - 90, 0, H);
     g.addColorStop(0, `rgba(${lerp(80,255,day)},${lerp(120,200,day)},${lerp(255,120,day)},${lerp(0.08,0.12,day)})`);
     g.addColorStop(1, "rgba(0,0,0,0)");
-    const sceneLeft = getSceneWorldLeft();
-    const sceneWidth = getSceneWorldWidth();
-    const sceneBottom = getSceneWorldBottom();
     ctx.fillStyle = g;
-    ctx.fillRect(sceneLeft, horizonY - 90, sceneWidth, 110);
+    ctx.fillRect(0, horizonY - 90, W, 110);
 
     for (let i = 0; i < city.length; i++) {
       const b = city[i];
@@ -1580,7 +1533,7 @@
     fieldBack.addColorStop(0.42, rgba(lerp(12, 32, day), lerp(20, 50, day), lerp(17, 30, day), 1));
     fieldBack.addColorStop(1, rgba(lerp(10, 22, day), lerp(17, 34, day), lerp(14, 24, day), 1));
     ctx.fillStyle = fieldBack;
-    ctx.fillRect(sceneLeft, horizonY, sceneWidth, sceneBottom - horizonY);
+    ctx.fillRect(0, horizonY, W, H - horizonY);
 
     const fieldShape = ctx.createLinearGradient(0, horizonY + 8, 0, H);
     fieldShape.addColorStop(0, rgba(lerp(24, 52, day), lerp(34, 74, day), lerp(25, 42, day), 0.98));
@@ -2215,89 +2168,75 @@
   }
 
   function drawHUD() {
-    const mobile = isMobileLayout();
-    const pad = mobile ? 12 : 24;
-    const gap = mobile ? 10 : 18;
-    const x = pad;
-    const y = mobile ? 12 : 22;
-
-    const panelW = mobile ? Math.min(W * 0.46, 212) : Math.min(450, W * 0.36);
-    const panelH = mobile ? 60 : 104;
-
-    const hpBarW = mobile ? Math.min(W * 0.27, 122) : Math.min(320, W * 0.24);
-    const hpBarH = mobile ? 16 : 26;
-    const hpX = x + panelW + gap;
-    const hpY = y + (mobile ? 6 : 22);
-
-    const mapW = mobile ? Math.min(W * 0.24, 110) : 190;
-    const mapH = mobile ? 54 : 92;
-    const mapX = W - mapW - pad;
-    const mapY = y;
-
-    const bottomMargin = mobile ? 12 : 20;
-    pauseButton.w = mobile ? 44 : 54;
-    pauseButton.h = mobile ? 44 : 54;
-    pauseButton.x = W - pauseButton.w - pad;
-    pauseButton.y = H - pauseButton.h - bottomMargin;
+    const panelW = Math.min(450, W * 0.36);
+    const panelH = 104;
+    const x = 24;
+    const y = 22;
 
     ctx.save();
     ctx.fillStyle = "rgba(8,14,26,0.66)";
     ctx.beginPath();
-    ctx.roundRect(x, y, panelW, panelH, mobile ? 14 : 18);
+    ctx.roundRect(x, y, panelW, panelH, 18);
     ctx.fill();
+
     ctx.strokeStyle = "rgba(120,170,255,0.18)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(x, y, panelW, panelH, mobile ? 14 : 18);
+    ctx.roundRect(x, y, panelW, panelH, 18);
     ctx.stroke();
 
     ctx.fillStyle = "rgba(235,245,255,0.96)";
-    ctx.font = mobile ? "700 16px Inter, Arial" : "700 26px Inter, Arial";
-    ctx.fillText("NIGHT SHIELD", x + (mobile ? 10 : 18), y + (mobile ? 18 : 31));
+    ctx.font = "700 26px Inter, Arial";
+    ctx.fillText("NIGHT SHIELD", x + 18, y + 31);
 
     ctx.fillStyle = "rgba(160,190,220,0.9)";
-    ctx.font = mobile ? "600 9px Inter, Arial" : "600 14px Inter, Arial";
-    ctx.fillText("СЧЁТ", x + (mobile ? 10 : 18), y + (mobile ? 33 : 56));
-    ctx.fillText("ВОЛНА", x + (mobile ? 74 : 130), y + (mobile ? 33 : 56));
-    ctx.fillText("ПЕРЕХВАТ", x + (mobile ? 126 : 220), y + (mobile ? 33 : 56));
+    ctx.font = "600 14px Inter, Arial";
+    ctx.fillText("СЧЁТ", x + 18, y + 56);
+    ctx.fillText("ВОЛНА", x + 130, y + 56);
+    ctx.fillText("ПЕРЕХВАТ", x + 220, y + 56);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = mobile ? "700 15px Inter, Arial" : "700 24px Inter, Arial";
-    ctx.fillText(String(score).padStart(5, "0"), x + (mobile ? 10 : 18), y + (mobile ? 50 : 82));
-    ctx.fillText(String(wave), x + (mobile ? 74 : 130), y + (mobile ? 50 : 82));
-    ctx.fillText(String(totalDestroyed), x + (mobile ? 126 : 220), y + (mobile ? 50 : 82));
+    ctx.font = "700 24px Inter, Arial";
+    ctx.fillText(String(score).padStart(5, "0"), x + 18, y + 82);
+    ctx.fillText(String(wave), x + 130, y + 82);
+    ctx.fillText(String(totalDestroyed), x + 220, y + 82);
+
+    const barX = x + panelW + 18;
+    const barY = y + 22;
+    const barW = Math.min(320, W * 0.24);
+    const barH = 26;
 
     ctx.fillStyle = "rgba(8,14,26,0.65)";
     ctx.beginPath();
-    ctx.roundRect(hpX, hpY, hpBarW, hpBarH, mobile ? 9 : 13);
+    ctx.roundRect(barX, barY, barW, barH, 13);
     ctx.fill();
 
     const hpT = cityHealth / cityMaxHealth;
-    const hpGrad = ctx.createLinearGradient(hpX, hpY, hpX + hpBarW, hpY);
+    const hpGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
     hpGrad.addColorStop(0, "#55d3ff");
     hpGrad.addColorStop(0.45, "#70ffcf");
     hpGrad.addColorStop(1, "#f6d06a");
     ctx.fillStyle = hpGrad;
     ctx.beginPath();
-    ctx.roundRect(hpX + 2, hpY + 2, (hpBarW - 4) * hpT, hpBarH - 4, mobile ? 7 : 10);
+    ctx.roundRect(barX + 3, barY + 3, (barW - 6) * hpT, barH - 6, 10);
     ctx.fill();
 
     ctx.strokeStyle = "rgba(120,170,255,0.18)";
     ctx.beginPath();
-    ctx.roundRect(hpX, hpY, hpBarW, hpBarH, mobile ? 9 : 13);
+    ctx.roundRect(barX, barY, barW, barH, 13);
     ctx.stroke();
 
     ctx.fillStyle = "rgba(220,235,255,0.95)";
-    ctx.font = mobile ? "700 9px Inter, Arial" : "700 14px Inter, Arial";
-    ctx.fillText(mobile ? "ГОРОД" : "ЦЕЛОСТНОСТЬ ГОРОДА", hpX, hpY - (mobile ? 4 : 8));
+    ctx.font = "700 14px Inter, Arial";
+    ctx.fillText("ЦЕЛОСТНОСТЬ ГОРОДА", barX, barY - 8);
 
-    const eX = hpX;
-    const eY = hpY + (mobile ? 26 : 46);
-    const eW = hpBarW;
-    const eH = mobile ? 11 : 16;
+    const eX = barX;
+    const eY = barY + 46;
+    const eW = barW;
+    const eH = 16;
     ctx.fillStyle = "rgba(8,14,26,0.65)";
     ctx.beginPath();
-    ctx.roundRect(eX, eY, eW, eH, mobile ? 6 : 8);
+    ctx.roundRect(eX, eY, eW, eH, 8);
     ctx.fill();
 
     const enT = launcher.energy / launcher.energyMax;
@@ -2306,20 +2245,25 @@
     eGrad.addColorStop(1, "#c8f0ff");
     ctx.fillStyle = eGrad;
     ctx.beginPath();
-    ctx.roundRect(eX + 2, eY + 2, (eW - 4) * enT, eH - 4, mobile ? 5 : 7);
+    ctx.roundRect(eX + 2, eY + 2, (eW - 4) * enT, eH - 4, 7);
     ctx.fill();
 
     ctx.fillStyle = "rgba(220,235,255,0.9)";
-    ctx.font = mobile ? "600 8px Inter, Arial" : "600 12px Inter, Arial";
-    ctx.fillText(mobile ? "ЗАРЯД" : "ЗАРЯД УСТАНОВКИ", eX, eY - (mobile ? 4 : 7));
+    ctx.font = "600 12px Inter, Arial";
+    ctx.fillText("ЗАРЯД УСТАНОВКИ", eX, eY - 7);
+
+    const mapW = 190;
+    const mapH = 92;
+    const mapX = W - mapW - 24;
+    const mapY = 22;
 
     ctx.fillStyle = "rgba(8,14,26,0.65)";
     ctx.beginPath();
-    ctx.roundRect(mapX, mapY, mapW, mapH, mobile ? 14 : 18);
+    ctx.roundRect(mapX, mapY, mapW, mapH, 18);
     ctx.fill();
     ctx.strokeStyle = "rgba(120,170,255,0.18)";
     ctx.beginPath();
-    ctx.roundRect(mapX, mapY, mapW, mapH, mobile ? 14 : 18);
+    ctx.roundRect(mapX, mapY, mapW, mapH, 18);
     ctx.stroke();
 
     const sx = mapW / W;
@@ -2342,108 +2286,84 @@
     }
     ctx.fillStyle = "rgba(150,235,255,1)";
     ctx.beginPath();
-    ctx.arc(mapX + launcher.x * sx, mapY + launcher.y * sy, mobile ? 2.4 : 3.5, 0, TAU);
+    ctx.arc(mapX + launcher.x * sx, mapY + launcher.y * sy, 3.5, 0, TAU);
     ctx.fill();
 
     ctx.fillStyle = "rgba(220,235,255,0.95)";
-    ctx.font = mobile ? "700 8px Inter, Arial" : "700 12px Inter, Arial";
-    ctx.fillText(mobile ? "ОБЗОР" : "ТАКТИЧЕСКИЙ ОБЗОР", mapX + 8, mapY + (mobile ? 10 : 16));
+    ctx.font = "700 12px Inter, Arial";
+    ctx.fillText("ТАКТИЧЕСКИЙ ОБЗОР", mapX + 12, mapY + 16);
 
+    // active effects
+    const effectsY = mapY + mapH + 14;
     const active = [];
-    if (effects.infiniteAmmo > 0) active.push([mobile ? "∞" : "∞ ПАТРОНЫ", effects.infiniteAmmo, "#9fe8ff"]);
-    if (effects.powerShot > 0) active.push([mobile ? "УДАР" : "СИЛЬНЫЙ УДАР", effects.powerShot, "#ffd48a"]);
-    if (effects.slowTime > 0) active.push([mobile ? "SLOW" : "ЗАМЕДЛЕНИЕ", effects.slowTime, "#a7c3ff"]);
-    if (effects.shieldDrones > 0) active.push([mobile ? "ЩИТ" : "ДРОНЫ-ЩИТЫ", effects.shieldDrones, "#75e4ff"]);
-    if (effects.splitShot > 0) active.push([mobile ? "x3" : "РАЗДВОЕНИЕ", effects.splitShot, "#ffb9ff"]);
+    if (effects.infiniteAmmo > 0) active.push([window.innerWidth < 900 ? "∞ ПАТРОНЫ" : "∞ ПАТРОНЫ", effects.infiniteAmmo, "#9fe8ff"]);
+    if (effects.powerShot > 0) active.push([window.innerWidth < 900 ? "СИЛЬН. УДАР" : "СИЛЬНЫЙ УДАР", effects.powerShot, "#ffd48a"]);
+    if (effects.slowTime > 0) active.push([window.innerWidth < 900 ? "ЗАМЕДЛЕНИЕ" : "ЗАМЕДЛЕНИЕ", effects.slowTime, "#a7c3ff"]);
+    if (effects.shieldDrones > 0) active.push([window.innerWidth < 900 ? "ДРОНЫ-ЩИТЫ" : "ДРОНЫ-ЩИТЫ", effects.shieldDrones, "#75e4ff"]);
+    if (effects.splitShot > 0) active.push([window.innerWidth < 900 ? "РАЗДВОЕНИЕ" : "РАЗДВОЕНИЕ", effects.splitShot, "#ffb9ff"]);
 
     if (active.length) {
-      if (mobile) {
-        const effectsW = Math.min(W - pauseButton.w - pad * 3, 224);
-        const cols = Math.max(2, Math.min(3, Math.floor((effectsW - 14) / 66)));
-        const chipW = Math.floor((effectsW - 12 - (cols - 1) * 6) / cols);
-        const rows = Math.ceil(Math.min(active.length, 5) / cols);
-        const chipH = 18;
-        const effectsH = 12 + rows * chipH + (rows - 1) * 6 + 8;
-        const effectsX = x;
-        const effectsY = H - 12 - effectsH;
-
-        ctx.fillStyle = "rgba(8,14,26,0.62)";
-        ctx.beginPath();
-        ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 14);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(120,170,255,0.18)";
-        ctx.beginPath();
-        ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 14);
-        ctx.stroke();
-
-        ctx.font = "700 8px Inter, Arial";
-        for (let i = 0; i < active.length && i < 5; i++) {
-          const col = i % cols;
-          const row = Math.floor(i / cols);
-          const chipX = effectsX + 6 + col * (chipW + 6);
-          const chipY = effectsY + 6 + row * (chipH + 6);
-
-          ctx.fillStyle = "rgba(14,22,38,0.88)";
-          ctx.beginPath();
-          ctx.roundRect(chipX, chipY, chipW, chipH, 9);
-          ctx.fill();
-
-          ctx.fillStyle = active[i][2];
-          ctx.fillText(active[i][0], chipX + 6, chipY + 12);
-          ctx.fillStyle = "rgba(230,240,255,0.95)";
-          ctx.textAlign = "right";
-          ctx.fillText(active[i][1].toFixed(0) + "с", chipX + chipW - 6, chipY + 12);
-          ctx.textAlign = "start";
-        }
-      } else {
-        const effectsX = W - 260;
-        const effectsY = mapY + mapH + 14;
-        ctx.fillStyle = "rgba(8,14,26,0.65)";
-        ctx.beginPath();
-        ctx.roundRect(effectsX, effectsY, 236, 22 + active.length * 22, 16);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(120,170,255,0.18)";
-        ctx.beginPath();
-        ctx.roundRect(effectsX, effectsY, 236, 22 + active.length * 22, 16);
-        ctx.stroke();
-        ctx.fillStyle = "rgba(220,235,255,0.95)";
-        ctx.font = "700 12px Inter, Arial";
-        ctx.fillText("АКТИВНЫЕ БОНУСЫ", effectsX + 12, effectsY + 15);
-        active.forEach((a, i) => {
-          ctx.fillStyle = a[2];
-          ctx.font = "700 12px Inter, Arial";
-          ctx.fillText(a[0], effectsX + 12, effectsY + 36 + i * 22);
-          ctx.fillStyle = "rgba(230,240,255,0.95)";
-          ctx.fillText(a[1].toFixed(1) + " c", effectsX + 162, effectsY + 36 + i * 22);
-        });
-      }
+      const isMobileHud = window.innerWidth < 900;
+      const effectsW = isMobileHud ? 250 : 236;
+      const effectsX = isMobileHud ? (W - effectsW - 24) : (W - 260);
+      const rowH = isMobileHud ? 20 : 22;
+      const labelFont = isMobileHud ? "700 11px Inter, Arial" : "700 12px Inter, Arial";
+      const timeFont = isMobileHud ? "700 10px Inter, Arial" : "700 12px Inter, Arial";
+      ctx.fillStyle = "rgba(8,14,26,0.65)";
+      ctx.beginPath();
+      ctx.roundRect(effectsX, effectsY, effectsW, 22 + active.length * rowH, 16);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.beginPath();
+      ctx.roundRect(effectsX, effectsY, effectsW, 22 + active.length * rowH, 16);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(220,235,255,0.95)";
+      ctx.font = "700 12px Inter, Arial";
+      ctx.fillText("АКТИВНЫЕ БОНУСЫ", effectsX + 12, effectsY + 15);
+      active.forEach((a, i) => {
+        const rowY = effectsY + 36 + i * rowH;
+        ctx.fillStyle = a[2];
+        ctx.font = labelFont;
+        ctx.textAlign = "start";
+        ctx.fillText(a[0], effectsX + 12, rowY);
+        ctx.fillStyle = "rgba(230,240,255,0.95)";
+        ctx.font = timeFont;
+        ctx.textAlign = "right";
+        ctx.fillText(a[1].toFixed(1) + " c", effectsX + effectsW - 12, rowY);
+        ctx.textAlign = "start";
+      });
     }
+
+    pauseButton.w = 54;
+    pauseButton.h = 54;
+    pauseButton.x = W - pauseButton.w - 24;
+    pauseButton.y = H - pauseButton.h - 20;
 
     ctx.fillStyle = "rgba(8,14,26,0.72)";
     ctx.beginPath();
-    ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, mobile ? 14 : 16);
+    ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 16);
     ctx.fill();
     ctx.strokeStyle = "rgba(120,170,255,0.18)";
     ctx.beginPath();
-    ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, mobile ? 14 : 16);
+    ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 16);
     ctx.stroke();
     ctx.fillStyle = "rgba(225,240,255,0.95)";
     if (paused) {
       ctx.beginPath();
-      ctx.moveTo(pauseButton.x + (mobile ? 16 : 20), pauseButton.y + (mobile ? 12 : 15));
-      ctx.lineTo(pauseButton.x + (mobile ? 16 : 20), pauseButton.y + (mobile ? 32 : 39));
-      ctx.lineTo(pauseButton.x + (mobile ? 31 : 38), pauseButton.y + (mobile ? 22 : 27));
+      ctx.moveTo(pauseButton.x + 20, pauseButton.y + 15);
+      ctx.lineTo(pauseButton.x + 20, pauseButton.y + 39);
+      ctx.lineTo(pauseButton.x + 38, pauseButton.y + 27);
       ctx.closePath();
       ctx.fill();
     } else {
-      ctx.fillRect(pauseButton.x + (mobile ? 14 : 18), pauseButton.y + (mobile ? 11 : 14), mobile ? 5 : 6, mobile ? 22 : 26);
-      ctx.fillRect(pauseButton.x + (mobile ? 25 : 30), pauseButton.y + (mobile ? 11 : 14), mobile ? 5 : 6, mobile ? 22 : 26);
+      ctx.fillRect(pauseButton.x + 18, pauseButton.y + 14, 6, 26);
+      ctx.fillRect(pauseButton.x + 30, pauseButton.y + 14, 6, 26);
     }
 
     ctx.fillStyle = "rgba(215,230,255,0.72)";
-    ctx.font = mobile ? "600 10px Inter, Arial" : "600 13px Inter, Arial";
-    const bottomHint = mobile ? "Касание — огонь • справа — пауза" : "ЛКМ — огонь   •   ESC / P — пауза   •   бонусы подбираются выстрелом";
-    ctx.fillText(bottomHint, mobile ? 12 : 26, H - 18);
+    ctx.font = "600 13px Inter, Arial";
+    const bottomHint = window.innerWidth < 900 ? "Касание — огонь   •   кнопка справа снизу — пауза   •   бонусы подбираются выстрелом" : "ЛКМ — огонь   •   ESC / P — пауза   •   бонусы подбираются выстрелом";
+    ctx.fillText(bottomHint, 26, H - 18);
 
     ctx.restore();
   }
@@ -2655,15 +2575,22 @@
 
     update(dt);
 
-    ctx.save();
     const shakeX = (Math.random() - 0.5) * screenShake;
     const shakeY = (Math.random() - 0.5) * screenShake;
-    ctx.translate(shakeX, shakeY);
+    const renderSceneScale = getRenderSceneScale();
 
-    const sceneScale = getSceneScale();
-    if (sceneScale !== 1) {
+    if (renderSceneScale !== 1) {
+      ctx.save();
+      ctx.translate(shakeX, shakeY);
+      drawSky();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+    if (renderSceneScale !== 1) {
       ctx.translate(W * 0.5, H * 0.5);
-      ctx.scale(sceneScale, sceneScale);
+      ctx.scale(renderSceneScale, renderSceneScale);
       ctx.translate(-W * 0.5, -H * 0.5);
     }
 
