@@ -90,12 +90,7 @@
   function resize() {
     W = window.innerWidth;
     H = window.innerHeight;
-    const rawDpr = window.devicePixelRatio || 1;
-    if (window.innerWidth < 900) {
-      DPR = Math.max(1, Math.min(Math.min(W, H) < 430 ? 1 : 1.15, rawDpr));
-    } else {
-      DPR = Math.max(1, Math.min(2, rawDpr));
-    }
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     canvas.width = Math.floor(W * DPR);
     canvas.height = Math.floor(H * DPR);
     canvas.style.width = W + "px";
@@ -133,26 +128,18 @@
     return window.innerWidth < 900;
   }
 
-  function isLowPerfMode() {
-    return isMobileLayout();
-  }
-
-  function getUIScale() {
-    if (!isMobileLayout()) return 1;
-    const base = Math.min(W / 1280, H / 720);
-    return clamp(base * 1.38, 0.54, 0.82);
-  }
-
-  function getFXScale() {
-    return isLowPerfMode() ? 0.62 : 1;
-  }
-
   function getSceneScale() {
-    return (isMobileLayout() && !isPortraitPhone()) ? 0.84 : 1;
+    if (!isMobileLayout() || isPortraitPhone()) return 1;
+    const aspect = W / Math.max(1, H);
+    return clamp(0.76 + (aspect - 1.6) * 0.07, 0.72, 0.82);
   }
 
   function getSceneWorldWidth() {
     return W / getSceneScale();
+  }
+
+  function getSceneWorldHeight() {
+    return H / getSceneScale();
   }
 
   function getSceneWorldLeft() {
@@ -161,6 +148,14 @@
 
   function getSceneWorldRight() {
     return getSceneWorldLeft() + getSceneWorldWidth();
+  }
+
+  function getSceneWorldTop() {
+    return -(getSceneWorldHeight() - H) * 0.5;
+  }
+
+  function getSceneWorldBottom() {
+    return getSceneWorldTop() + getSceneWorldHeight();
   }
 
   function pointInPauseButton(x, y) {
@@ -297,7 +292,6 @@
   const POWERUP_TYPES = ["heal", "power", "shield", "slow", "infinite", "split"] ;
 
   function addFloatingText(text, x, y, color = "#ffffff", size = 18) {
-    if (floatingTexts.length > (isLowPerfMode() ? 18 : 42)) floatingTexts.shift();
     floatingTexts.push({
       text, x, y,
       vx: rand(-10, 10),
@@ -312,12 +306,13 @@
   function initStars() {
     stars = [];
     const sceneLeft = getSceneWorldLeft();
+    const sceneTop = getSceneWorldTop();
     const sceneWidth = getSceneWorldWidth();
     const count = Math.floor((sceneWidth * H) / 8500);
     for (let i = 0; i < count; i++) {
       stars.push({
         x: sceneLeft + Math.random() * sceneWidth,
-        y: Math.random() * H * 0.72,
+        y: sceneTop + Math.random() * (H * 0.72),
         r: Math.random() * 1.8 + 0.3,
         a: Math.random() * 0.8 + 0.2,
         tw: Math.random() * TAU
@@ -325,12 +320,10 @@
     }
 
     backgroundSparks = [];
-    const sparkLeft = getSceneWorldLeft();
-    const sparkRight = getSceneWorldRight();
     for (let i = 0; i < 22; i++) {
       backgroundSparks.push({
-        x: rand(sparkLeft, sparkRight),
-        y: rand(0, H * 0.55),
+        x: rand(sceneLeft, sceneLeft + sceneWidth),
+        y: rand(sceneTop, sceneTop + H * 0.55),
         vx: rand(-8, 8),
         vy: rand(4, 14),
         t: rand(0, 6)
@@ -471,7 +464,7 @@
       swayPhase: Math.random() * TAU,
       r: 18,
       pulse: Math.random() * TAU,
-      life: 18,
+      life: 34,
       parachute: true
     });
   }
@@ -494,8 +487,6 @@
   }
 
   function addSmoke(x, y, vx, vy, size, life, color) {
-    const limit = isLowPerfMode() ? 110 : 260;
-    if (smokePuffs.length >= limit) return;
     smokePuffs.push({
       x, y, vx, vy, size, life, maxLife: life, color
     });
@@ -544,7 +535,7 @@
         : friendly ? [140, 235, 255] : [255, 180, 120]
     });
 
-    const count = Math.floor(power * 1.3 * getFXScale());
+    const count = Math.floor(power * 1.3);
     for (let i = 0; i < count; i++) {
       const a = Math.random() * TAU;
       const sp = rand(35, power * 4.1);
@@ -565,7 +556,7 @@
       });
     }
 
-    for (let i = 0; i < Math.floor(power * 0.45 * getFXScale()); i++) {
+    for (let i = 0; i < Math.floor(power * 0.45); i++) {
       embers.push({
         x, y,
         vx: rand(-40, 40),
@@ -576,7 +567,7 @@
       });
     }
 
-    for (let i = 0; i < Math.floor(power * 0.12 * getFXScale()); i++) {
+    for (let i = 0; i < Math.floor(power * 0.12); i++) {
       addSmoke(x + rand(-8, 8), y + rand(-8, 8), rand(-15, 15), rand(-30, -8), rand(10, 24), rand(0.6, 1.4),
         style === "cluster" ? [120, 90, 145] : [80, 80, 90]);
     }
@@ -660,14 +651,12 @@
   }
 
   function spawnMissile(type = "basic", custom) {
-    const sceneLeft = getSceneWorldLeft();
-    const sceneRight = getSceneWorldRight();
-    let startX = rand(sceneLeft, sceneRight);
+    let startX = rand(0, W);
     let startY = rand(-140, -30);
     if (!custom) {
       const sideBias = Math.random();
-      if (sideBias < 0.2) startX = rand(sceneLeft - W * 0.1, sceneLeft + W * 0.15);
-      else if (sideBias > 0.8) startX = rand(sceneRight - W * 0.15, sceneRight + W * 0.1);
+      if (sideBias < 0.2) startX = rand(-W * 0.1, W * 0.15);
+      else if (sideBias > 0.8) startX = rand(W * 0.85, W * 1.1);
     } else {
       startX = custom.x;
       startY = custom.y;
@@ -936,9 +925,10 @@
       sp.y += sp.vy * dt;
       const sceneLeft = getSceneWorldLeft();
       const sceneRight = getSceneWorldRight();
+      const sceneTop = getSceneWorldTop();
       if (sp.y > H * 0.65 || sp.x < sceneLeft - 20 || sp.x > sceneRight + 20) {
         sp.x = rand(sceneLeft, sceneRight);
-        sp.y = rand(0, H * 0.25);
+        sp.y = rand(sceneTop, sceneTop + H * 0.25);
         sp.vx = rand(-8, 8);
         sp.vy = rand(4, 14);
       }
@@ -1059,9 +1049,7 @@
         addSmoke(d.x - d.vx * 0.03, d.y + rand(-4, 4), rand(-6, 6), rand(-10, -2), rand(5, 9), rand(0.25, 0.5), [80, 82, 90]);
       }
 
-      const sceneLeft = getSceneWorldLeft();
-      const sceneRight = getSceneWorldRight();
-      if (d.x < sceneLeft - 120 || d.x > sceneRight + 120 || d.y > H * 0.55) {
+      if (d.x < -120 || d.x > W + 120 || d.y > H * 0.55) {
         drones.splice(i, 1);
       }
     }
@@ -1118,9 +1106,7 @@
       if (collectedPowerup) continue;
 
       const d = dist(b.x, b.y, b.tx, b.ty);
-      const sceneLeft = getSceneWorldLeft();
-      const sceneRight = getSceneWorldRight();
-      if ((d < 11 && b.arming <= 0) || b.life <= 0 || b.y < -30 || b.x < sceneLeft - 50 || b.x > sceneRight + 50) {
+      if ((d < 11 && b.arming <= 0) || b.life <= 0 || b.y < -30 || b.x < -50 || b.x > W + 50) {
         createExplosion(b.x, b.y, rand(42, 60) * b.power, true, b.power > 1 ? "power" : "normal");
         interceptors.splice(i, 1);
       }
@@ -1204,7 +1190,7 @@
     // Powerups
     for (let i = powerups.length - 1; i >= 0; i--) {
       const p = powerups[i];
-      p.life -= dt;
+      p.life -= p.y >= horizonY - 34 ? dt * 0.35 : dt;
       p.pulse += dt * 4;
       p.swayPhase += dt * p.sway;
       p.x += Math.sin(p.swayPhase) * 18 * dt + p.vx * dt;
@@ -1325,9 +1311,7 @@
         });
       }
 
-      const sceneLeft = getSceneWorldLeft();
-      const sceneRight = getSceneWorldRight();
-      if (d.life <= 0 || d.x < sceneLeft - 120 || d.x > sceneRight + 120) repairDrones.splice(i, 1);
+      if (d.life <= 0 || d.x < -120 || d.x > W + 120) repairDrones.splice(i, 1);
     }
 
     // Smoke
@@ -1412,9 +1396,11 @@
     sky.addColorStop(0.76, rgba(pal.skyBot[0], pal.skyBot[1], pal.skyBot[2], 1));
     sky.addColorStop(1, rgba(lerp(2, 26, day), lerp(5, 42, day), lerp(12, 64, day), 1));
     const sceneLeft = getSceneWorldLeft();
+    const sceneTop = getSceneWorldTop();
     const sceneWidth = getSceneWorldWidth();
+    const sceneHeight = getSceneWorldHeight();
     ctx.fillStyle = sky;
-    ctx.fillRect(sceneLeft, 0, sceneWidth, H);
+    ctx.fillRect(sceneLeft, sceneTop, sceneWidth, sceneHeight);
 
     // haze
     const haze = ctx.createRadialGradient(W * 0.55, H * 0.22, 20, W * 0.55, H * 0.22, W * 0.52);
@@ -1422,7 +1408,7 @@
     haze.addColorStop(0.35, rgba(lerp(80, 255, day), lerp(100, 210, day), lerp(180, 250, day), lerp(0.06, 0.05, day)));
     haze.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = haze;
-    ctx.fillRect(sceneLeft, 0, sceneWidth, H);
+    ctx.fillRect(sceneLeft, sceneTop, sceneWidth, sceneHeight);
 
     // moon and sun
     const moonX = W * 0.82;
@@ -1481,7 +1467,7 @@
     hg.addColorStop(0, `rgba(${pal.horizonGlow[0]},${pal.horizonGlow[1]},${pal.horizonGlow[2]},0)`);
     hg.addColorStop(1, `rgba(${pal.horizonGlow[0]},${pal.horizonGlow[1]},${pal.horizonGlow[2]},${lerp(0.12, 0.18, day)})`);
     ctx.fillStyle = hg;
-    ctx.fillRect(sceneLeft, H * 0.55, sceneWidth, H * 0.45);
+    ctx.fillRect(sceneLeft, H * 0.55, sceneWidth, sceneHeight - H * 0.55);
   }
 
   function drawMountains() {
@@ -1516,6 +1502,7 @@
     g.addColorStop(1, "rgba(0,0,0,0)");
     const sceneLeft = getSceneWorldLeft();
     const sceneWidth = getSceneWorldWidth();
+    const sceneBottom = getSceneWorldBottom();
     ctx.fillStyle = g;
     ctx.fillRect(sceneLeft, horizonY - 90, sceneWidth, 110);
 
@@ -1593,7 +1580,7 @@
     fieldBack.addColorStop(0.42, rgba(lerp(12, 32, day), lerp(20, 50, day), lerp(17, 30, day), 1));
     fieldBack.addColorStop(1, rgba(lerp(10, 22, day), lerp(17, 34, day), lerp(14, 24, day), 1));
     ctx.fillStyle = fieldBack;
-    ctx.fillRect(sceneLeft, horizonY, sceneWidth, H - horizonY);
+    ctx.fillRect(sceneLeft, horizonY, sceneWidth, sceneBottom - horizonY);
 
     const fieldShape = ctx.createLinearGradient(0, horizonY + 8, 0, H);
     fieldShape.addColorStop(0, rgba(lerp(24, 52, day), lerp(34, 74, day), lerp(25, 42, day), 0.98));
@@ -1601,13 +1588,13 @@
     fieldShape.addColorStop(1, rgba(lerp(12, 24, day), lerp(20, 34, day), lerp(16, 22, day), 1));
     ctx.fillStyle = fieldShape;
     ctx.beginPath();
-    ctx.moveTo(sceneLeft, horizonY + 22);
-    for (let x = sceneLeft; x <= sceneLeft + sceneWidth; x += 24) {
+    ctx.moveTo(0, horizonY + 22);
+    for (let x = 0; x <= W; x += 24) {
       const yy = horizonY + 20 + Math.sin(x * 0.015 + 0.4) * 5 + Math.sin(x * 0.041) * 2.5;
       ctx.lineTo(x, yy);
     }
-    ctx.lineTo(sceneLeft + sceneWidth, H);
-    ctx.lineTo(sceneLeft, H);
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
     ctx.closePath();
     ctx.fill();
 
@@ -1687,15 +1674,13 @@
   }
 
   function drawSmoke() {
-    const low = isLowPerfMode();
-    for (let i = 0; i < smokePuffs.length; i += (low ? 2 : 1)) {
-      const s = smokePuffs[i];
+    for (const s of smokePuffs) {
       const a = clamp(s.life / s.maxLife, 0, 1) * 0.26;
       const [r, g, b] = s.color;
-      if (!low) glowCircle(s.x, s.y, s.size * 1.8, `rgba(${r},${g},${b},ALPHA)`, a * 0.5);
+      glowCircle(s.x, s.y, s.size * 1.8, `rgba(${r},${g},${b},ALPHA)`, a * 0.5);
       ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
       ctx.beginPath();
-      ctx.arc(s.x, s.y, low ? s.size * 0.9 : s.size, 0, TAU);
+      ctx.arc(s.x, s.y, s.size, 0, TAU);
       ctx.fill();
     }
   }
@@ -1844,28 +1829,25 @@
   }
 
   function drawMissiles() {
-    const low = isLowPerfMode();
     for (const m of missiles) {
-      const step = low ? 2 : 1;
-      for (let i = 0; i < m.trail.length; i += step) {
-        const t = i / Math.max(1, m.trail.length);
+      for (let i = 0; i < m.trail.length; i++) {
+        const t = i / m.trail.length;
         const p = m.trail[i];
         let color = "rgba(255,120,90,ALPHA)";
         if (m.type === "cluster") color = "rgba(210,120,255,ALPHA)";
         else if (m.type === "heavy") color = "rgba(255,80,90,ALPHA)";
-        glowCircle(p.x, p.y, (m.type === "mini" ? 4 : 7) + t * (low ? 5 : 8), color, t * (low ? 0.1 : 0.16));
+        glowCircle(p.x, p.y, (m.type === "mini" ? 4 : 7) + t * 8, color, t * 0.16);
       }
       drawRealisticRocket(m);
     }
   }
 
   function drawInterceptors() {
-    const low = isLowPerfMode();
     for (const b of interceptors) {
-      for (let i = 0; i < b.trail.length; i += (low ? 2 : 1)) {
-        const t = i / Math.max(1, b.trail.length);
+      for (let i = 0; i < b.trail.length; i++) {
+        const t = i / b.trail.length;
         const p = b.trail[i];
-        glowCircle(p.x, p.y, 7 + t * (low ? 6 : 9), b.power > 1 ? "rgba(255,220,120,ALPHA)" : "rgba(120,220,255,ALPHA)", t * (low ? 0.12 : 0.22));
+        glowCircle(p.x, p.y, 7 + t * 9, b.power > 1 ? "rgba(255,220,120,ALPHA)" : "rgba(120,220,255,ALPHA)", t * 0.22);
       }
 
       const a = Math.atan2(b.vy, b.vx);
@@ -2233,7 +2215,6 @@
   }
 
   function drawHUD() {
-    const ui = getUIScale();
     const mobile = isMobileLayout();
     const pad = mobile ? 12 : 24;
     const gap = mobile ? 10 : 18;
@@ -2260,7 +2241,6 @@
     pauseButton.y = H - pauseButton.h - bottomMargin;
 
     ctx.save();
-
     ctx.fillStyle = "rgba(8,14,26,0.66)";
     ctx.beginPath();
     ctx.roundRect(x, y, panelW, panelH, mobile ? 14 : 18);
@@ -2271,42 +2251,25 @@
     ctx.roundRect(x, y, panelW, panelH, mobile ? 14 : 18);
     ctx.stroke();
 
-    if (mobile) {
-      ctx.fillStyle = "rgba(235,245,255,0.96)";
-      drawTextShadow("NIGHT SHIELD", x + 10, y + 17, "700 12px Inter, Arial", "rgba(235,245,255,0.96)");
+    ctx.fillStyle = "rgba(235,245,255,0.96)";
+    ctx.font = mobile ? "700 16px Inter, Arial" : "700 26px Inter, Arial";
+    ctx.fillText("NIGHT SHIELD", x + (mobile ? 10 : 18), y + (mobile ? 18 : 31));
 
-      ctx.fillStyle = "rgba(160,190,220,0.9)";
-      ctx.font = "700 9px Inter, Arial";
-      ctx.fillText("СЧЁТ", x + 10, y + 31);
-      ctx.fillText("ВОЛНА", x + 76, y + 31);
-      ctx.fillText("ПЕРЕХВАТ", x + 130, y + 31);
+    ctx.fillStyle = "rgba(160,190,220,0.9)";
+    ctx.font = mobile ? "600 9px Inter, Arial" : "600 14px Inter, Arial";
+    ctx.fillText("СЧЁТ", x + (mobile ? 10 : 18), y + (mobile ? 33 : 56));
+    ctx.fillText("ВОЛНА", x + (mobile ? 74 : 130), y + (mobile ? 33 : 56));
+    ctx.fillText("ПЕРЕХВАТ", x + (mobile ? 126 : 220), y + (mobile ? 33 : 56));
 
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "700 14px Inter, Arial";
-      ctx.fillText(String(score).padStart(5, "0"), x + 10, y + 47);
-      ctx.fillText(String(wave), x + 76, y + 47);
-      ctx.fillText(String(totalDestroyed), x + 130, y + 47);
-    } else {
-      ctx.fillStyle = "rgba(235,245,255,0.96)";
-      ctx.font = "700 26px Inter, Arial";
-      ctx.fillText("NIGHT SHIELD", x + 18, y + 31);
-
-      ctx.fillStyle = "rgba(160,190,220,0.9)";
-      ctx.font = "600 14px Inter, Arial";
-      ctx.fillText("СЧЁТ", x + 18, y + 56);
-      ctx.fillText("ВОЛНА", x + 130, y + 56);
-      ctx.fillText("ПЕРЕХВАТ", x + 220, y + 56);
-
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "700 24px Inter, Arial";
-      ctx.fillText(String(score).padStart(5, "0"), x + 18, y + 82);
-      ctx.fillText(String(wave), x + 130, y + 82);
-      ctx.fillText(String(totalDestroyed), x + 220, y + 82);
-    }
+    ctx.fillStyle = "#ffffff";
+    ctx.font = mobile ? "700 15px Inter, Arial" : "700 24px Inter, Arial";
+    ctx.fillText(String(score).padStart(5, "0"), x + (mobile ? 10 : 18), y + (mobile ? 50 : 82));
+    ctx.fillText(String(wave), x + (mobile ? 74 : 130), y + (mobile ? 50 : 82));
+    ctx.fillText(String(totalDestroyed), x + (mobile ? 126 : 220), y + (mobile ? 50 : 82));
 
     ctx.fillStyle = "rgba(8,14,26,0.65)";
     ctx.beginPath();
-    ctx.roundRect(hpX, hpY, hpBarW, hpBarH, mobile ? 8 : 13);
+    ctx.roundRect(hpX, hpY, hpBarW, hpBarH, mobile ? 9 : 13);
     ctx.fill();
 
     const hpT = cityHealth / cityMaxHealth;
@@ -2316,24 +2279,25 @@
     hpGrad.addColorStop(1, "#f6d06a");
     ctx.fillStyle = hpGrad;
     ctx.beginPath();
-    ctx.roundRect(hpX + 2, hpY + 2, Math.max(0, (hpBarW - 4) * hpT), hpBarH - 4, mobile ? 6 : 10);
+    ctx.roundRect(hpX + 2, hpY + 2, (hpBarW - 4) * hpT, hpBarH - 4, mobile ? 7 : 10);
     ctx.fill();
+
     ctx.strokeStyle = "rgba(120,170,255,0.18)";
     ctx.beginPath();
-    ctx.roundRect(hpX, hpY, hpBarW, hpBarH, mobile ? 8 : 13);
+    ctx.roundRect(hpX, hpY, hpBarW, hpBarH, mobile ? 9 : 13);
     ctx.stroke();
 
     ctx.fillStyle = "rgba(220,235,255,0.95)";
-    ctx.font = mobile ? "700 8px Inter, Arial" : "700 14px Inter, Arial";
-    ctx.fillText(mobile ? "ГОРОД" : "ЦЕЛОСТНОСТЬ ГОРОДА", hpX, hpY - (mobile ? 3 : 8));
+    ctx.font = mobile ? "700 9px Inter, Arial" : "700 14px Inter, Arial";
+    ctx.fillText(mobile ? "ГОРОД" : "ЦЕЛОСТНОСТЬ ГОРОДА", hpX, hpY - (mobile ? 4 : 8));
 
     const eX = hpX;
-    const eY = hpY + (mobile ? 24 : 46);
+    const eY = hpY + (mobile ? 26 : 46);
     const eW = hpBarW;
-    const eH = mobile ? 10 : 16;
+    const eH = mobile ? 11 : 16;
     ctx.fillStyle = "rgba(8,14,26,0.65)";
     ctx.beginPath();
-    ctx.roundRect(eX, eY, eW, eH, mobile ? 5 : 8);
+    ctx.roundRect(eX, eY, eW, eH, mobile ? 6 : 8);
     ctx.fill();
 
     const enT = launcher.energy / launcher.energyMax;
@@ -2342,11 +2306,12 @@
     eGrad.addColorStop(1, "#c8f0ff");
     ctx.fillStyle = eGrad;
     ctx.beginPath();
-    ctx.roundRect(eX + 2, eY + 2, Math.max(0, (eW - 4) * enT), eH - 4, mobile ? 4 : 7);
+    ctx.roundRect(eX + 2, eY + 2, (eW - 4) * enT, eH - 4, mobile ? 5 : 7);
     ctx.fill();
+
     ctx.fillStyle = "rgba(220,235,255,0.9)";
     ctx.font = mobile ? "600 8px Inter, Arial" : "600 12px Inter, Arial";
-    ctx.fillText(mobile ? "ЗАРЯД" : "ЗАРЯД УСТАНОВКИ", eX, eY - (mobile ? 3 : 7));
+    ctx.fillText(mobile ? "ЗАРЯД" : "ЗАРЯД УСТАНОВКИ", eX, eY - (mobile ? 4 : 7));
 
     ctx.fillStyle = "rgba(8,14,26,0.65)";
     ctx.beginPath();
@@ -2357,35 +2322,35 @@
     ctx.roundRect(mapX, mapY, mapW, mapH, mobile ? 14 : 18);
     ctx.stroke();
 
-    const sceneLeft = getSceneWorldLeft();
-    const sceneWidth = getSceneWorldWidth();
-    const sx = mapW / sceneWidth;
+    const sx = mapW / W;
     const sy = mapH / H;
+
     ctx.fillStyle = "rgba(80,110,180,0.18)";
-    ctx.fillRect(mapX + 6, mapY + mapH * 0.6, mapW - 12, 2);
+    ctx.fillRect(mapX + 8, mapY + mapH * 0.6, mapW - 16, 2);
 
     for (const b of city) {
       ctx.fillStyle = b.alive ? "rgba(130,210,255,0.7)" : "rgba(255,100,80,0.28)";
-      ctx.fillRect(mapX + (b.x - sceneLeft) * sx, mapY + b.y * sy, Math.max(1.5, b.w * sx), Math.max(1.5, b.h * sy));
+      ctx.fillRect(mapX + b.x * sx, mapY + b.y * sy, Math.max(2, b.w * sx), Math.max(2, b.h * sy));
     }
     for (const m of missiles) {
       ctx.fillStyle = m.type === "cluster" ? "rgba(210,120,255,0.95)" : "rgba(255,120,90,0.95)";
-      ctx.fillRect(mapX + (m.x - sceneLeft) * sx, mapY + m.y * sy, mobile ? 2 : 2.5, mobile ? 2 : 2.5);
+      ctx.fillRect(mapX + m.x * sx, mapY + m.y * sy, 2.5, 2.5);
     }
     for (const d of drones) {
       ctx.fillStyle = "rgba(255,170,100,0.95)";
-      ctx.fillRect(mapX + (d.x - sceneLeft) * sx, mapY + d.y * sy, mobile ? 2.2 : 3, mobile ? 1.8 : 2);
+      ctx.fillRect(mapX + d.x * sx, mapY + d.y * sy, 3, 2);
     }
     ctx.fillStyle = "rgba(150,235,255,1)";
     ctx.beginPath();
-    ctx.arc(mapX + (launcher.x - sceneLeft) * sx, mapY + launcher.y * sy, mobile ? 2.6 : 3.5, 0, TAU);
+    ctx.arc(mapX + launcher.x * sx, mapY + launcher.y * sy, mobile ? 2.4 : 3.5, 0, TAU);
     ctx.fill();
+
     ctx.fillStyle = "rgba(220,235,255,0.95)";
     ctx.font = mobile ? "700 8px Inter, Arial" : "700 12px Inter, Arial";
     ctx.fillText(mobile ? "ОБЗОР" : "ТАКТИЧЕСКИЙ ОБЗОР", mapX + 8, mapY + (mobile ? 10 : 16));
 
     const active = [];
-    if (effects.infiniteAmmo > 0) active.push(["∞", effects.infiniteAmmo, "#9fe8ff"]);
+    if (effects.infiniteAmmo > 0) active.push([mobile ? "∞" : "∞ ПАТРОНЫ", effects.infiniteAmmo, "#9fe8ff"]);
     if (effects.powerShot > 0) active.push([mobile ? "УДАР" : "СИЛЬНЫЙ УДАР", effects.powerShot, "#ffd48a"]);
     if (effects.slowTime > 0) active.push([mobile ? "SLOW" : "ЗАМЕДЛЕНИЕ", effects.slowTime, "#a7c3ff"]);
     if (effects.shieldDrones > 0) active.push([mobile ? "ЩИТ" : "ДРОНЫ-ЩИТЫ", effects.shieldDrones, "#75e4ff"]);
@@ -2393,10 +2358,15 @@
 
     if (active.length) {
       if (mobile) {
+        const effectsW = Math.min(W - pauseButton.w - pad * 3, 224);
+        const cols = Math.max(2, Math.min(3, Math.floor((effectsW - 14) / 66)));
+        const chipW = Math.floor((effectsW - 12 - (cols - 1) * 6) / cols);
+        const rows = Math.ceil(Math.min(active.length, 5) / cols);
+        const chipH = 18;
+        const effectsH = 12 + rows * chipH + (rows - 1) * 6 + 8;
         const effectsX = x;
-        const effectsY = H - 64;
-        const effectsW = Math.min(W - pauseButton.w - pad * 3, 210);
-        const effectsH = 40;
+        const effectsY = H - 12 - effectsH;
+
         ctx.fillStyle = "rgba(8,14,26,0.62)";
         ctx.beginPath();
         ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 14);
@@ -2405,15 +2375,25 @@
         ctx.beginPath();
         ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 14);
         ctx.stroke();
+
         ctx.font = "700 8px Inter, Arial";
-        let tx = effectsX + 8;
-        const ty = effectsY + 22;
-        for (let i = 0; i < active.length && i < 3; i++) {
+        for (let i = 0; i < active.length && i < 5; i++) {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          const chipX = effectsX + 6 + col * (chipW + 6);
+          const chipY = effectsY + 6 + row * (chipH + 6);
+
+          ctx.fillStyle = "rgba(14,22,38,0.88)";
+          ctx.beginPath();
+          ctx.roundRect(chipX, chipY, chipW, chipH, 9);
+          ctx.fill();
+
           ctx.fillStyle = active[i][2];
-          ctx.fillText(active[i][0], tx, ty);
+          ctx.fillText(active[i][0], chipX + 6, chipY + 12);
           ctx.fillStyle = "rgba(230,240,255,0.95)";
-          ctx.fillText(active[i][1].toFixed(0) + "с", tx + 22, ty);
-          tx += 62;
+          ctx.textAlign = "right";
+          ctx.fillText(active[i][1].toFixed(0) + "с", chipX + chipW - 6, chipY + 12);
+          ctx.textAlign = "start";
         }
       } else {
         const effectsX = W - 260;
@@ -2461,11 +2441,9 @@
     }
 
     ctx.fillStyle = "rgba(215,230,255,0.72)";
-    ctx.font = mobile ? "600 9px Inter, Arial" : "600 13px Inter, Arial";
-    const bottomHint = mobile
-      ? "Касание — огонь • справа — пауза"
-      : "ЛКМ — огонь   •   ESC / P — пауза   •   бонусы подбираются выстрелом";
-    ctx.fillText(bottomHint, x, H - 10);
+    ctx.font = mobile ? "600 10px Inter, Arial" : "600 13px Inter, Arial";
+    const bottomHint = mobile ? "Касание — огонь • справа — пауза" : "ЛКМ — огонь   •   ESC / P — пауза   •   бонусы подбираются выстрелом";
+    ctx.fillText(bottomHint, mobile ? 12 : 26, H - 18);
 
     ctx.restore();
   }
@@ -2536,9 +2514,9 @@
     ctx.restore();
 
     ctx.textAlign = "center";
-    drawTextShadow("ПОВЕРНИ ТЕЛЕФОН", W * 0.5, H * 0.5 + 42, isMobileLayout() ? "800 26px Inter, Arial" : "800 34px Inter, Arial", "rgba(240,248,255,0.98)");
+    drawTextShadow("ПОВЕРНИ ТЕЛЕФОН", W * 0.5, H * 0.5 + 42, "800 34px Inter, Arial", "rgba(240,248,255,0.98)");
     ctx.fillStyle = "rgba(190,210,230,0.92)";
-    ctx.font = isMobileLayout() ? "600 15px Inter, Arial" : "600 18px Inter, Arial";
+    ctx.font = "600 18px Inter, Arial";
     ctx.fillText("Для игры нужен горизонтальный режим", W * 0.5, H * 0.5 + 72);
     ctx.textAlign = "start";
   }
@@ -2681,6 +2659,7 @@
     const shakeX = (Math.random() - 0.5) * screenShake;
     const shakeY = (Math.random() - 0.5) * screenShake;
     ctx.translate(shakeX, shakeY);
+
     const sceneScale = getSceneScale();
     if (sceneScale !== 1) {
       ctx.translate(W * 0.5, H * 0.5);
