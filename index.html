@@ -120,28 +120,29 @@
   }
 
   function getWorldView() {
-    if (!useWideMobileView()) return { scale: 1, offsetX: 0, offsetY: 0 };
+    if (!useWideMobileView()) return { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
     const aspect = W / Math.max(1, H);
-    const narrowness = clamp((2.25 - aspect) / 0.8, 0, 1);
-    const scale = clamp(0.90 - narrowness * 0.045, 0.855, 0.90);
-    const offsetX = (W - W * scale) * 0.5;
-    const offsetY = (H - H * scale) * 0.5;
-    return { scale, offsetX, offsetY };
+    const wideBoost = clamp((aspect - 1.75) / 0.9, 0, 1);
+    const scaleX = 1.0;
+    const scaleY = lerp(0.97, 0.955, wideBoost);
+    const offsetX = 0;
+    const offsetY = (H - H * scaleY) * 0.5;
+    return { scaleX, scaleY, offsetX, offsetY };
   }
 
   function screenToWorld(x, y) {
     const view = getWorldView();
     return {
-      x: (x - view.offsetX) / view.scale,
-      y: (y - view.offsetY) / view.scale
+      x: (x - view.offsetX) / view.scaleX,
+      y: (y - view.offsetY) / view.scaleY
     };
   }
 
   function applyWorldViewTransform() {
     const view = getWorldView();
-    if (view.scale !== 1) {
+    if (view.scaleX !== 1 || view.scaleY !== 1 || view.offsetX !== 0 || view.offsetY !== 0) {
       ctx.translate(view.offsetX, view.offsetY);
-      ctx.scale(view.scale, view.scale);
+      ctx.scale(view.scaleX, view.scaleY);
     }
   }
 
