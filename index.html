@@ -103,36 +103,59 @@
 
   // ---------- Input ----------
   const mouse = { x: 0, y: 0, down: false, justPressed: false };
+  const pointerScreen = { x: 0, y: 0 };
   const pointer = { active: false, isTouch: false };
   const pauseButton = { x: 0, y: 0, w: 54, h: 54 };
 
-  function updatePointerPos(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const sx = clientX - rect.left;
-    const sy = clientY - rect.top;
-    const scale = getRenderSceneScale();
-    if (scale !== 1) {
-      mouse.x = (sx - W * 0.5) / scale + W * 0.5;
-      mouse.y = (sy - H * 0.5) / scale + H * 0.5;
-    } else {
-      mouse.x = sx;
-      mouse.y = sy;
-    }
+  function isMobileScreen() {
+    return Math.min(window.innerWidth, window.innerHeight) < 950 || ("ontouchstart" in window && window.innerWidth < 1200);
   }
 
   function isPortraitPhone() {
-    return window.innerWidth < 900 && window.innerHeight > window.innerWidth;
+    return isMobileScreen() && window.innerHeight > window.innerWidth;
   }
 
-  function getRenderSceneScale() {
-    return (window.innerWidth < 900 && !isPortraitPhone()) ? 0.88 : 1;
+  function useWideMobileView() {
+    return isMobileScreen() && !isPortraitPhone();
+  }
+
+  function getWorldView() {
+    if (!useWideMobileView()) return { scale: 1, offsetX: 0, offsetY: 0 };
+    const aspect = W / Math.max(1, H);
+    const narrowness = clamp((2.25 - aspect) / 0.8, 0, 1);
+    const scale = clamp(0.90 - narrowness * 0.045, 0.855, 0.90);
+    const offsetX = (W - W * scale) * 0.5;
+    const offsetY = (H - H * scale) * 0.5;
+    return { scale, offsetX, offsetY };
+  }
+
+  function screenToWorld(x, y) {
+    const view = getWorldView();
+    return {
+      x: (x - view.offsetX) / view.scale,
+      y: (y - view.offsetY) / view.scale
+    };
+  }
+
+  function applyWorldViewTransform() {
+    const view = getWorldView();
+    if (view.scale !== 1) {
+      ctx.translate(view.offsetX, view.offsetY);
+      ctx.scale(view.scale, view.scale);
+    }
+  }
+
+  function updatePointerPos(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    pointerScreen.x = clientX - rect.left;
+    pointerScreen.y = clientY - rect.top;
+    const worldPos = screenToWorld(pointerScreen.x, pointerScreen.y);
+    mouse.x = worldPos.x;
+    mouse.y = worldPos.y;
   }
 
   function pointInPauseButton(x, y) {
-    const scale = getRenderSceneScale();
-    const sx = scale !== 1 ? (x - W * 0.5) * scale + W * 0.5 : x;
-    const sy = scale !== 1 ? (y - H * 0.5) * scale + H * 0.5 : y;
-    return sx >= pauseButton.x && sx <= pauseButton.x + pauseButton.w && sy >= pauseButton.y && sy <= pauseButton.y + pauseButton.h;
+    return x >= pauseButton.x && x <= pauseButton.x + pauseButton.w && y >= pauseButton.y && y <= pauseButton.y + pauseButton.h;
   }
 
   function togglePause() {
@@ -429,7 +452,7 @@
       swayPhase: Math.random() * TAU,
       r: 18,
       pulse: Math.random() * TAU,
-      life: 30,
+      life: 18,
       parachute: true
     });
   }
@@ -1159,7 +1182,6 @@
       p.y += p.vy * dt;
 
       if (p.y > horizonY - 34) {
-        p.y = horizonY - 34;
         powerups.splice(i, 1);
         continue;
       }
@@ -1918,6 +1940,74 @@
     }
   }
 
+  function drawPowerupGlyph(type, x, y, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    if (type === "heal") {
+      ctx.fillStyle = "#dfffee";
+      ctx.beginPath();
+      ctx.roundRect(-10, -10, 20, 20, 5);
+      ctx.fill();
+      ctx.fillStyle = "#2dd38b";
+      ctx.fillRect(-3, -7, 6, 14);
+      ctx.fillRect(-7, -3, 14, 6);
+    } else if (type === "power") {
+      ctx.fillStyle = "#ffe7aa";
+      ctx.beginPath();
+      ctx.moveTo(-2, -11);
+      ctx.lineTo(8, -2);
+      ctx.lineTo(2, -2);
+      ctx.lineTo(7, 11);
+      ctx.lineTo(-8, 1);
+      ctx.lineTo(-2, 1);
+      ctx.closePath();
+      ctx.fill();
+    } else if (type === "slow") {
+      ctx.strokeStyle = "#dce6ff";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 8, 0, TAU);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -5);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(4, 2);
+      ctx.stroke();
+    } else if (type === "infinite") {
+      ctx.strokeStyle = "#def7ff";
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.ellipse(-4, 0, 5, 3.8, 0, 0, TAU);
+      ctx.ellipse(4, 0, 5, 3.8, 0, 0, TAU);
+      ctx.stroke();
+    } else if (type === "shield") {
+      ctx.fillStyle = "#d6faff";
+      ctx.beginPath();
+      ctx.moveTo(0, -11);
+      ctx.lineTo(9, -6);
+      ctx.lineTo(7, 5);
+      ctx.lineTo(0, 11);
+      ctx.lineTo(-7, 5);
+      ctx.lineTo(-9, -6);
+      ctx.closePath();
+      ctx.fill();
+    } else if (type === "split") {
+      ctx.strokeStyle = "#ffe0ff";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(0, -9);
+      ctx.lineTo(0, 9);
+      ctx.moveTo(-7, -6);
+      ctx.lineTo(-7, 6);
+      ctx.moveTo(7, -6);
+      ctx.lineTo(7, 6);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function drawPowerups() {
     for (const p of powerups) {
       let c1 = "#7fffc6";
@@ -1962,70 +2052,7 @@
       ctx.roundRect(p.x - 18, p.y - 17, 36, 34, 11);
       ctx.stroke();
 
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      if (p.type === "heal") {
-        ctx.fillStyle = "#dfffee";
-        ctx.beginPath();
-        ctx.roundRect(-10, -10, 20, 20, 5);
-        ctx.fill();
-        ctx.fillStyle = "#2dd38b";
-        ctx.fillRect(-3, -7, 6, 14);
-        ctx.fillRect(-7, -3, 14, 6);
-      } else if (p.type === "power") {
-        ctx.fillStyle = "#ffe7aa";
-        ctx.beginPath();
-        ctx.moveTo(-2, -11);
-        ctx.lineTo(8, -2);
-        ctx.lineTo(2, -2);
-        ctx.lineTo(7, 11);
-        ctx.lineTo(-8, 1);
-        ctx.lineTo(-2, 1);
-        ctx.closePath();
-        ctx.fill();
-      } else if (p.type === "slow") {
-        ctx.strokeStyle = "#dce6ff";
-        ctx.lineWidth = 2.2;
-        ctx.beginPath();
-        ctx.arc(0, 0, 8, 0, TAU);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(0, -5);
-        ctx.moveTo(0, 0);
-        ctx.lineTo(4, 2);
-        ctx.stroke();
-      } else if (p.type === "infinite") {
-        ctx.strokeStyle = "#def7ff";
-        ctx.lineWidth = 2.6;
-        ctx.beginPath();
-        ctx.ellipse(-4, 0, 5, 3.8, 0, 0, TAU);
-        ctx.ellipse(4, 0, 5, 3.8, 0, 0, TAU);
-        ctx.stroke();
-      } else if (p.type === "shield") {
-        ctx.fillStyle = "#d6faff";
-        ctx.beginPath();
-        ctx.moveTo(0, -11);
-        ctx.lineTo(9, -6);
-        ctx.lineTo(7, 5);
-        ctx.lineTo(0, 11);
-        ctx.lineTo(-7, 5);
-        ctx.lineTo(-9, -6);
-        ctx.closePath();
-        ctx.fill();
-      } else if (p.type === "split") {
-        ctx.strokeStyle = "#ffe0ff";
-        ctx.lineWidth = 2.4;
-        ctx.beginPath();
-        ctx.moveTo(0, -9);
-        ctx.lineTo(0, 9);
-        ctx.moveTo(-7, -6);
-        ctx.lineTo(-7, 6);
-        ctx.moveTo(7, -6);
-        ctx.lineTo(7, 6);
-        ctx.stroke();
-      }
-      ctx.restore();
+      drawPowerupGlyph(p.type, p.x, p.y, 1);
     }
   }
 
@@ -2168,6 +2195,201 @@
   }
 
   function drawHUD() {
+    const mobile = useWideMobileView();
+
+    if (mobile) {
+      const safe = 10;
+      const topY = 10;
+      const statW = Math.min(208, W * 0.34);
+      const statH = 68;
+      const statX = safe;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      ctx.beginPath();
+      ctx.roundRect(statX, topY, statW, statH, 16);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.beginPath();
+      ctx.roundRect(statX, topY, statW, statH, 16);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(235,245,255,0.95)";
+      ctx.font = "700 16px Inter, Arial";
+      ctx.fillText("NIGHT SHIELD", statX + 12, topY + 19);
+
+      ctx.fillStyle = "rgba(170,195,220,0.92)";
+      ctx.font = "600 9px Inter, Arial";
+      ctx.fillText("СЧЁТ", statX + 12, topY + 35);
+      ctx.fillText("ВОЛНА", statX + 76, topY + 35);
+      ctx.fillText("СБИТО", statX + 132, topY + 35);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 15px Inter, Arial";
+      ctx.fillText(String(score).padStart(5, "0"), statX + 12, topY + 54);
+      ctx.fillText(String(wave), statX + 76, topY + 54);
+      ctx.fillText(String(totalDestroyed), statX + 132, topY + 54);
+
+      const mapW = Math.min(156, W * 0.29);
+      const mapH = 68;
+      const mapX = W - mapW - safe;
+      const mapY = topY;
+
+      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      ctx.beginPath();
+      ctx.roundRect(mapX, mapY, mapW, mapH, 16);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.beginPath();
+      ctx.roundRect(mapX, mapY, mapW, mapH, 16);
+      ctx.stroke();
+
+      const sx = mapW / W;
+      const sy = mapH / H;
+      ctx.fillStyle = "rgba(80,110,180,0.18)";
+      ctx.fillRect(mapX + 6, mapY + mapH * 0.6, mapW - 12, 2);
+      for (const b of city) {
+        ctx.fillStyle = b.alive ? "rgba(130,210,255,0.7)" : "rgba(255,100,80,0.28)";
+        ctx.fillRect(mapX + b.x * sx, mapY + b.y * sy, Math.max(2, b.w * sx), Math.max(2, b.h * sy));
+      }
+      for (const m of missiles) {
+        ctx.fillStyle = m.type === "cluster" ? "rgba(210,120,255,0.95)" : "rgba(255,120,90,0.95)";
+        ctx.fillRect(mapX + m.x * sx, mapY + m.y * sy, 2.2, 2.2);
+      }
+      for (const d of drones) {
+        ctx.fillStyle = "rgba(255,170,100,0.95)";
+        ctx.fillRect(mapX + d.x * sx, mapY + d.y * sy, 2.8, 2);
+      }
+      ctx.fillStyle = "rgba(150,235,255,1)";
+      ctx.beginPath();
+      ctx.arc(mapX + launcher.x * sx, mapY + launcher.y * sy, 2.8, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = "rgba(220,235,255,0.95)";
+      ctx.font = "700 10px Inter, Arial";
+      ctx.fillText("ОБЗОР", mapX + 8, mapY + 12);
+
+      const barGap = 10;
+      const barsX = statX + statW + barGap;
+      const barsRight = mapX - barGap;
+      const barsW = Math.max(100, barsRight - barsX);
+      const hpY = topY + 6;
+      const barH = 18;
+
+      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      ctx.beginPath();
+      ctx.roundRect(barsX, hpY, barsW, barH, 10);
+      ctx.fill();
+      const hpT = cityHealth / cityMaxHealth;
+      const hpGrad = ctx.createLinearGradient(barsX, hpY, barsX + barsW, hpY);
+      hpGrad.addColorStop(0, "#55d3ff");
+      hpGrad.addColorStop(0.45, "#70ffcf");
+      hpGrad.addColorStop(1, "#f6d06a");
+      ctx.fillStyle = hpGrad;
+      ctx.beginPath();
+      ctx.roundRect(barsX + 2, hpY + 2, (barsW - 4) * hpT, barH - 4, 8);
+      ctx.fill();
+      ctx.fillStyle = "rgba(235,245,255,0.92)";
+      ctx.font = "700 9px Inter, Arial";
+      ctx.fillText("ГОРОД", barsX + 6, hpY - 2);
+
+      const energyY = hpY + 30;
+      ctx.fillStyle = "rgba(8,14,26,0.68)";
+      ctx.beginPath();
+      ctx.roundRect(barsX, energyY, barsW, 14, 8);
+      ctx.fill();
+      const enT = launcher.energy / launcher.energyMax;
+      const eGrad = ctx.createLinearGradient(barsX, energyY, barsX + barsW, energyY);
+      eGrad.addColorStop(0, "#74b9ff");
+      eGrad.addColorStop(1, "#c8f0ff");
+      ctx.fillStyle = eGrad;
+      ctx.beginPath();
+      ctx.roundRect(barsX + 2, energyY + 2, (barsW - 4) * enT, 10, 6);
+      ctx.fill();
+      ctx.fillStyle = "rgba(235,245,255,0.92)";
+      ctx.font = "700 9px Inter, Arial";
+      ctx.fillText("ЗАРЯД", barsX + 6, energyY - 2);
+
+      const active = [];
+      if (effects.infiniteAmmo > 0) active.push(["infinite", effects.infiniteAmmo, "#9fe8ff"]);
+      if (effects.powerShot > 0) active.push(["power", effects.powerShot, "#ffd48a"]);
+      if (effects.slowTime > 0) active.push(["slow", effects.slowTime, "#a7c3ff"]);
+      if (effects.shieldDrones > 0) active.push(["shield", effects.shieldDrones, "#75e4ff"]);
+      if (effects.splitShot > 0) active.push(["split", effects.splitShot, "#ffb9ff"]);
+
+      const effectsW = Math.min(Math.max(190, active.length * 54 + 24), W * 0.56);
+      const effectsH = 52;
+      const effectsX = (W - effectsW) * 0.5;
+      const effectsY = H - effectsH - 8;
+      ctx.fillStyle = "rgba(8,14,26,0.72)";
+      ctx.beginPath();
+      ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 16);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.beginPath();
+      ctx.roundRect(effectsX, effectsY, effectsW, effectsH, 16);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(220,235,255,0.95)";
+      ctx.font = "700 10px Inter, Arial";
+      ctx.fillText("БОНУСЫ", effectsX + 10, effectsY + 12);
+
+      if (active.length) {
+        const slotStep = Math.min(54, (effectsW - 18) / active.length);
+        active.forEach((a, i) => {
+          const cx = effectsX + 16 + i * slotStep + slotStep * 0.5 - 12;
+          const cy = effectsY + 28;
+          ctx.fillStyle = "rgba(18,28,46,0.85)";
+          ctx.beginPath();
+          ctx.roundRect(cx - 16, cy - 14, 32, 28, 10);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(120,170,255,0.14)";
+          ctx.beginPath();
+          ctx.roundRect(cx - 16, cy - 14, 32, 28, 10);
+          ctx.stroke();
+          drawPowerupGlyph(a[0], cx, cy - 1, 0.62);
+          ctx.fillStyle = "rgba(235,245,255,0.96)";
+          ctx.font = "700 9px Inter, Arial";
+          ctx.textAlign = "center";
+          ctx.fillText(a[1].toFixed(1) + "с", cx, effectsY + 46);
+          ctx.textAlign = "start";
+        });
+      } else {
+        ctx.fillStyle = "rgba(180,200,225,0.72)";
+        ctx.font = "600 10px Inter, Arial";
+        ctx.fillText("Нет активных бонусов", effectsX + 10, effectsY + 32);
+      }
+
+      pauseButton.w = 46;
+      pauseButton.h = 46;
+      pauseButton.x = W - pauseButton.w - 10;
+      pauseButton.y = H - pauseButton.h - 12;
+      ctx.fillStyle = "rgba(8,14,26,0.76)";
+      ctx.beginPath();
+      ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 14);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120,170,255,0.18)";
+      ctx.beginPath();
+      ctx.roundRect(pauseButton.x, pauseButton.y, pauseButton.w, pauseButton.h, 14);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(225,240,255,0.95)";
+      if (paused) {
+        ctx.beginPath();
+        ctx.moveTo(pauseButton.x + 17, pauseButton.y + 13);
+        ctx.lineTo(pauseButton.x + 17, pauseButton.y + 33);
+        ctx.lineTo(pauseButton.x + 32, pauseButton.y + 23);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillRect(pauseButton.x + 15, pauseButton.y + 12, 5, 22);
+        ctx.fillRect(pauseButton.x + 26, pauseButton.y + 12, 5, 22);
+      }
+
+      ctx.fillStyle = "rgba(215,230,255,0.7)";
+      ctx.font = "600 10px Inter, Arial";
+      ctx.fillText("Касание — огонь", 10, H - 14);
+      ctx.restore();
+      return;
+    }
+
     const panelW = Math.min(450, W * 0.36);
     const panelH = 104;
     const x = 24;
@@ -2293,44 +2515,33 @@
     ctx.font = "700 12px Inter, Arial";
     ctx.fillText("ТАКТИЧЕСКИЙ ОБЗОР", mapX + 12, mapY + 16);
 
-    // active effects
+    const effectsX = W - 260;
     const effectsY = mapY + mapH + 14;
     const active = [];
-    if (effects.infiniteAmmo > 0) active.push([window.innerWidth < 900 ? "∞ ПАТРОНЫ" : "∞ ПАТРОНЫ", effects.infiniteAmmo, "#9fe8ff"]);
-    if (effects.powerShot > 0) active.push([window.innerWidth < 900 ? "СИЛЬН. УДАР" : "СИЛЬНЫЙ УДАР", effects.powerShot, "#ffd48a"]);
-    if (effects.slowTime > 0) active.push([window.innerWidth < 900 ? "ЗАМЕДЛЕНИЕ" : "ЗАМЕДЛЕНИЕ", effects.slowTime, "#a7c3ff"]);
-    if (effects.shieldDrones > 0) active.push([window.innerWidth < 900 ? "ДРОНЫ-ЩИТЫ" : "ДРОНЫ-ЩИТЫ", effects.shieldDrones, "#75e4ff"]);
-    if (effects.splitShot > 0) active.push([window.innerWidth < 900 ? "РАЗДВОЕНИЕ" : "РАЗДВОЕНИЕ", effects.splitShot, "#ffb9ff"]);
+    if (effects.infiniteAmmo > 0) active.push(["∞ ПАТРОНЫ", effects.infiniteAmmo, "#9fe8ff"]);
+    if (effects.powerShot > 0) active.push(["СИЛЬНЫЙ УДАР", effects.powerShot, "#ffd48a"]);
+    if (effects.slowTime > 0) active.push(["ЗАМЕДЛЕНИЕ", effects.slowTime, "#a7c3ff"]);
+    if (effects.shieldDrones > 0) active.push(["ДРОНЫ-ЩИТЫ", effects.shieldDrones, "#75e4ff"]);
+    if (effects.splitShot > 0) active.push(["РАЗДВОЕНИЕ", effects.splitShot, "#ffb9ff"]);
 
     if (active.length) {
-      const isMobileHud = window.innerWidth < 900;
-      const effectsW = isMobileHud ? 250 : 236;
-      const effectsX = isMobileHud ? (W - effectsW - 24) : (W - 260);
-      const rowH = isMobileHud ? 20 : 22;
-      const labelFont = isMobileHud ? "700 11px Inter, Arial" : "700 12px Inter, Arial";
-      const timeFont = isMobileHud ? "700 10px Inter, Arial" : "700 12px Inter, Arial";
       ctx.fillStyle = "rgba(8,14,26,0.65)";
       ctx.beginPath();
-      ctx.roundRect(effectsX, effectsY, effectsW, 22 + active.length * rowH, 16);
+      ctx.roundRect(effectsX, effectsY, 236, 22 + active.length * 22, 16);
       ctx.fill();
       ctx.strokeStyle = "rgba(120,170,255,0.18)";
       ctx.beginPath();
-      ctx.roundRect(effectsX, effectsY, effectsW, 22 + active.length * rowH, 16);
+      ctx.roundRect(effectsX, effectsY, 236, 22 + active.length * 22, 16);
       ctx.stroke();
       ctx.fillStyle = "rgba(220,235,255,0.95)";
       ctx.font = "700 12px Inter, Arial";
       ctx.fillText("АКТИВНЫЕ БОНУСЫ", effectsX + 12, effectsY + 15);
       active.forEach((a, i) => {
-        const rowY = effectsY + 36 + i * rowH;
         ctx.fillStyle = a[2];
-        ctx.font = labelFont;
-        ctx.textAlign = "start";
-        ctx.fillText(a[0], effectsX + 12, rowY);
+        ctx.font = "700 12px Inter, Arial";
+        ctx.fillText(a[0], effectsX + 12, effectsY + 36 + i * 22);
         ctx.fillStyle = "rgba(230,240,255,0.95)";
-        ctx.font = timeFont;
-        ctx.textAlign = "right";
-        ctx.fillText(a[1].toFixed(1) + " c", effectsX + effectsW - 12, rowY);
-        ctx.textAlign = "start";
+        ctx.fillText(a[1].toFixed(1) + " c", effectsX + 162, effectsY + 36 + i * 22);
       });
     }
 
@@ -2575,26 +2786,14 @@
 
     update(dt);
 
-    const shakeX = (Math.random() - 0.5) * screenShake;
-    const shakeY = (Math.random() - 0.5) * screenShake;
-    const renderSceneScale = getRenderSceneScale();
-
-    if (renderSceneScale !== 1) {
-      ctx.save();
-      ctx.translate(shakeX, shakeY);
-      drawSky();
-      ctx.restore();
-    }
+    drawSky();
 
     ctx.save();
+    const shakeX = (Math.random() - 0.5) * screenShake;
+    const shakeY = (Math.random() - 0.5) * screenShake;
     ctx.translate(shakeX, shakeY);
-    if (renderSceneScale !== 1) {
-      ctx.translate(W * 0.5, H * 0.5);
-      ctx.scale(renderSceneScale, renderSceneScale);
-      ctx.translate(-W * 0.5, -H * 0.5);
-    }
+    applyWorldViewTransform();
 
-    drawSky();
     drawMountains();
     drawCity();
     drawSmoke();
