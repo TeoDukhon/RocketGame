@@ -19,6 +19,7 @@
       cursor: crosshair;
       background: #020611;
       touch-action: none;
+      contain: strict;
     }
   </style>
 </head>
@@ -29,7 +30,7 @@
   "use strict";
 
   const canvas = document.getElementById("game");
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { alpha: false });
 
   let W = 1280;
   let H = 720;
@@ -41,6 +42,11 @@
   const rand = (a, b) => Math.random() * (b - a) + a;
   const randi = (a, b) => Math.floor(rand(a, b + 1));
   const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  const distSq = (ax, ay, bx, by) => {
+    const dx = ax - bx;
+    const dy = ay - by;
+    return dx * dx + dy * dy;
+  };
   const smoothstep = (a, b, x) => {
     let t = clamp((x - a) / (b - a), 0, 1);
     return t * t * (3 - 2 * t);
@@ -527,7 +533,8 @@
         y: Math.random() * H * 0.72,
         r: Math.random() * 1.8 + 0.3,
         a: Math.random() * 0.8 + 0.2,
-        tw: Math.random() * TAU
+        tw: Math.random() * TAU,
+        twSpeed: rand(0.4, 1.2)
       });
     }
 
@@ -579,7 +586,7 @@
       }
 
       city.push(building);
-      skylineGlow.push({ pulse: Math.random() * TAU });
+      skylineGlow.push({ pulse: Math.random() * TAU, pulseSpeed: rand(0.3, 0.7) });
       x += bw + rand(2, 8);
     }
 
@@ -1150,8 +1157,8 @@
     flash *= Math.pow(0.05, dt);
     waveAlert = Math.max(0, waveAlert - dt);
 
-    for (const s of stars) s.tw += dt * rand(0.4, 1.2);
-    for (const g of skylineGlow) g.pulse += dt * rand(0.3, 0.7);
+    for (const s of stars) s.tw += dt * s.twSpeed;
+    for (const g of skylineGlow) g.pulse += dt * g.pulseSpeed;
     for (const sp of backgroundSparks) {
       sp.t += dt;
       sp.x += sp.vx * dt;
@@ -1164,7 +1171,11 @@
       }
     }
 
-    for (const k of Object.keys(effects)) effects[k] = Math.max(0, effects[k] - dt);
+    effects.infiniteAmmo = Math.max(0, effects.infiniteAmmo - dt);
+    effects.powerShot = Math.max(0, effects.powerShot - dt);
+    effects.slowTime = Math.max(0, effects.slowTime - dt);
+    effects.shieldDrones = Math.max(0, effects.shieldDrones - dt);
+    effects.splitShot = Math.max(0, effects.splitShot - dt);
 
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
       const f = floatingTexts[i];
@@ -1324,7 +1335,8 @@
       let collectedPowerup = false;
       for (let pi = powerups.length - 1; pi >= 0; pi--) {
         const p = powerups[pi];
-        if (dist(b.x, b.y, p.x, p.y) < p.r + 8) {
+        const collectRadius = p.r + 8;
+        if (distSq(b.x, b.y, p.x, p.y) < collectRadius * collectRadius) {
           createExplosion(b.x, b.y, 34, true, b.power > 1 ? "power" : "normal");
           applyPowerup(p.type);
           powerups.splice(pi, 1);
@@ -1335,8 +1347,9 @@
       }
       if (collectedPowerup) continue;
 
-      const d = dist(b.x, b.y, b.tx, b.ty);
-      if ((d < 11 && b.arming <= 0) || b.life <= 0 || b.y < -30 || b.x < -50 || b.x > W + 50) {
+      const dxToTarget = b.x - b.tx;
+      const dyToTarget = b.y - b.ty;
+      if (((dxToTarget * dxToTarget + dyToTarget * dyToTarget) < 121 && b.arming <= 0) || b.life <= 0 || b.y < -30 || b.x < -50 || b.x > W + 50) {
         createExplosion(b.x, b.y, rand(42, 60) * b.power, true, b.power > 1 ? "power" : "normal");
         interceptors.splice(i, 1);
       }
@@ -1366,7 +1379,8 @@
 
       for (let mi = missiles.length - 1; mi >= 0; mi--) {
         const m = missiles[mi];
-        if ((m.spawnProtect || 0) <= 0 && dist(e.x, e.y, m.x, m.y) < e.r + 8) {
+        const missileHitRadius = e.r + 8;
+        if ((m.spawnProtect || 0) <= 0 && distSq(e.x, e.y, m.x, m.y) < missileHitRadius * missileHitRadius) {
           m.hp -= e.friendly ? 2 : 1;
           if (m.hp <= 0) {
             createExplosion(m.x, m.y, m.type === "heavy" ? rand(34, 48) : rand(26, 42), false, m.type === "cluster" ? "cluster" : "normal");
@@ -1383,7 +1397,8 @@
 
       for (let di = drones.length - 1; di >= 0; di--) {
         const d = drones[di];
-        if (dist(e.x, e.y, d.x, d.y) < e.r + 16) {
+        const droneHitRadius = e.r + 16;
+        if (distSq(e.x, e.y, d.x, d.y) < droneHitRadius * droneHitRadius) {
           d.hp -= e.friendly ? 2 : 1;
           if (d.hp <= 0) {
             createExplosion(d.x, d.y, rand(34, 52), false);
@@ -1400,7 +1415,8 @@
 
       for (let bi = bombs.length - 1; bi >= 0; bi--) {
         const b = bombs[bi];
-        if (dist(e.x, e.y, b.x, b.y) < e.r + 8) {
+        const bombHitRadius = e.r + 8;
+        if (distSq(e.x, e.y, b.x, b.y) < bombHitRadius * bombHitRadius) {
           createExplosion(b.x, b.y, rand(16, 22), false);
           bombs.splice(bi, 1);
           score += 70;
@@ -1410,7 +1426,8 @@
 
       for (let pi = powerups.length - 1; pi >= 0; pi--) {
         const p = powerups[pi];
-        if (dist(e.x, e.y, p.x, p.y) < e.r + p.r) {
+        const powerupHitRadius = e.r + p.r;
+        if (distSq(e.x, e.y, p.x, p.y) < powerupHitRadius * powerupHitRadius) {
           applyPowerup(p.type);
           powerups.splice(pi, 1);
         }
@@ -1445,11 +1462,11 @@
       let target = null;
       let best = 999999;
       for (const m of missiles) {
-        const dd = dist(d.x, d.y, m.x, m.y);
+        const dd = distSq(d.x, d.y, m.x, m.y);
         if (dd < best) { best = dd; target = m; }
       }
 
-      if (target && best < 180) {
+      if (target && best < 180 * 180) {
         const dx = target.x - d.x;
         const dy = target.y - d.y;
         const len = Math.hypot(dx, dy) || 1;
@@ -1469,7 +1486,8 @@
 
       for (let mi = missiles.length - 1; mi >= 0; mi--) {
         const m = missiles[mi];
-        if (dist(d.x, d.y, m.x, m.y) < m.r + 12) {
+        const shieldHitRadius = m.r + 12;
+        if (distSq(d.x, d.y, m.x, m.y) < shieldHitRadius * shieldHitRadius) {
           createExplosion(m.x, m.y, m.type === "cluster" ? 34 : 26, true, m.type === "cluster" ? "cluster" : "normal");
           addFloatingText("ЩИТ СБИЛ УГРОЗУ", m.x, m.y - 8, "#75e4ff", 16);
           missiles.splice(mi, 1);
