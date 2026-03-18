@@ -11,20 +11,11 @@
       background: #020611;
       font-family: Inter, Arial, sans-serif;
       user-select: none;
-      width: 100%;
-      height: 100%;
-    }
-    body {
-      position: fixed;
-      inset: 0;
     }
     canvas {
       display: block;
-      position: fixed;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
+      width: 100vw;
+      height: 100vh;
       cursor: crosshair;
       background: #020611;
       touch-action: none;
@@ -351,59 +342,19 @@
     playOsc("triangle", 110, 42, 0.75, 0.04, t + 0.04, { filterFreq: 800, envelope: [[0,0.0001],[0.02,0.04],[0.75,0.0001]] });
   }
 
-  function getViewportSize() {
-    const vv = window.visualViewport;
-    const vw = vv && vv.width ? Math.round(vv.width) : 0;
-    const vh = vv && vv.height ? Math.round(vv.height) : 0;
-    const iw = Math.round(window.innerWidth || 0);
-    const ih = Math.round(window.innerHeight || 0);
-    const dw = document.documentElement ? Math.round(document.documentElement.clientWidth || 0) : 0;
-    const dh = document.documentElement ? Math.round(document.documentElement.clientHeight || 0) : 0;
-    const isMobileViewport = /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent || '') || Math.min(iw || 9999, ih || 9999) < 900;
-
-    if (isMobileViewport) {
-      return {
-        w: Math.max(1, vw, iw, dw, W),
-        h: Math.max(1, vh, ih, dh, H)
-      };
-    }
-
-    return {
-      w: Math.max(1, iw, dw, vw, W),
-      h: Math.max(1, ih, dh, vh, H)
-    };
-  }
-
   function resize() {
-    const vp = getViewportSize();
-    W = vp.w;
-    H = vp.h;
+    W = window.innerWidth;
+    H = window.innerHeight;
     DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    canvas.width = Math.max(1, Math.floor(W * DPR));
-    canvas.height = Math.max(1, Math.floor(H * DPR));
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
     canvas.style.width = W + "px";
     canvas.style.height = H + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     initStars();
     initCity();
   }
-
-  function hardResizeFix() {
-    resize();
-    setTimeout(resize, 60);
-    setTimeout(resize, 180);
-    setTimeout(resize, 420);
-  }
-
-  window.addEventListener("resize", hardResizeFix);
-  window.addEventListener("orientationchange", hardResizeFix);
-  window.addEventListener("pageshow", hardResizeFix);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) hardResizeFix();
-  });
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", hardResizeFix);
-  }
+  window.addEventListener("resize", resize);
 
   // ---------- Input ----------
   const mouse = { x: 0, y: 0, down: false, justPressed: false };
@@ -417,8 +368,7 @@
   }
 
   function isPortraitPhone() {
-    const vp = getViewportSize();
-    return vp.w < 900 && vp.h > vp.w;
+    return window.innerWidth < 900 && window.innerHeight > window.innerWidth;
   }
 
   function pointInPauseButton(x, y) {
@@ -2504,7 +2454,7 @@
   }
 
   function drawHUD() {
-    const mobile = W < 900;
+    const mobile = window.innerWidth < 900;
 
     if (mobile) {
       const pad = 12;
@@ -2888,7 +2838,7 @@
 
     ctx.fillStyle = "rgba(215,230,255,0.72)";
     ctx.font = "600 13px Inter, Arial";
-    const bottomHint = W < 900 ? "Касание — огонь   •   кнопка справа снизу — пауза   •   бонусы подбираются выстрелом" : "ЛКМ — огонь   •   ESC / P — пауза   •   бонусы подбираются выстрелом";
+    const bottomHint = window.innerWidth < 900 ? "Касание — огонь   •   кнопка справа снизу — пауза   •   бонусы подбираются выстрелом" : "ЛКМ — огонь   •   ESC / P — пауза   •   бонусы подбираются выстрелом";
     ctx.fillText(bottomHint, 26, H - 18);
 
     ctx.restore();
@@ -3018,7 +2968,7 @@
 
     ctx.fillStyle = "#021017";
     ctx.font = "800 15px Inter, Arial";
-    ctx.fillText(W < 900 ? "КАСАНИЕ ДЛЯ СТАРТА" : "ENTER / КЛИК ДЛЯ СТАРТА", cx, by + 152);
+    ctx.fillText(window.innerWidth < 900 ? "КАСАНИЕ ДЛЯ СТАРТА" : "ENTER / КЛИК ДЛЯ СТАРТА", cx, by + 152);
 
     ctx.textAlign = "start";
     ctx.restore();
@@ -3031,7 +2981,7 @@
     drawTextShadow("ПАУЗА", W / 2, H / 2 - 10, "800 54px Inter, Arial", "rgba(240,248,255,0.96)");
     ctx.fillStyle = "rgba(180,205,225,0.88)";
     ctx.font = "600 18px Inter, Arial";
-    ctx.fillText(W < 900 ? "Нажми кнопку паузы, чтобы продолжить" : "Нажми ESC / P, чтобы продолжить оборону", W / 2, H / 2 + 28);
+    ctx.fillText(window.innerWidth < 900 ? "Нажми кнопку паузы, чтобы продолжить" : "Нажми ESC / P, чтобы продолжить оборону", W / 2, H / 2 + 28);
     ctx.textAlign = "start";
   }
 
